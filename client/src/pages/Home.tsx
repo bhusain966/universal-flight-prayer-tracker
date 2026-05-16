@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useParams, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import FlightMap from "@/components/FlightMap";
@@ -81,6 +81,42 @@ function LocalTimeDisplay({ localRaw, utcRaw }: { localRaw?: string | null; utcR
       {utc && <span className="block text-[10px] text-muted-foreground/60 font-mono">{utc}</span>}
     </div>
   );
+}
+
+/**
+ * Derive the approximate UTC offset (in whole hours) from a longitude.
+ * Uses the standard solar-time formula: offset = round(lng / 15).
+ * This matches the same approach used in server/prayer.ts for prayer calculations.
+ */
+function lngToUtcOffsetHours(lng: number): number {
+  return Math.round(lng / 15);
+}
+
+/**
+ * Live clock hook: returns the current local time string (HH:MM:SS) and UTC offset label
+ * at the given longitude. Ticks every second. Returns null when lng is unavailable.
+ */
+function useLocalAircraftTime(lng?: number | null): { time: string; offsetLabel: string } | null {
+  const offsetHours = useMemo(() => (lng != null ? lngToUtcOffsetHours(lng) : null), [lng]);
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    const id = setInterval(() => setTick(t => t + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  if (offsetHours == null) return null;
+
+  const now = new Date();
+  const localMs = now.getTime() + offsetHours * 3600 * 1000;
+  const local = new Date(localMs);
+  const hh = String(local.getUTCHours()).padStart(2, "0");
+  const mm = String(local.getUTCMinutes()).padStart(2, "0");
+  const ss = String(local.getUTCSeconds()).padStart(2, "0");
+  const sign = offsetHours >= 0 ? "+" : "";
+  // Suppress lint warning — tick is intentionally used to force re-render each second
+  void tick;
+  return { time: `${hh}:${mm}:${ss}`, offsetLabel: `UTC${sign}${offsetHours}` };
 }
 
 function formatDuration(mins?: number | null): string {
@@ -400,6 +436,9 @@ export default function Home() {
   const etaIso = fr24?.etaIso ?? flight?.arr_estimated_utc ?? flight?.arr_time_utc;
   const totalDuration = flight?.duration ?? null;
 
+  // Live local time at aircraft position (ticks every second)
+  const localAircraftTime = useLocalAircraftTime(flight?.lng);
+
   return (
     <div className="min-h-screen flex flex-col">
       {/* ── Header ── */}
@@ -638,6 +677,16 @@ export default function Home() {
                   value={totalDuration != null ? formatDuration(totalDuration) : "—"}
                   sub={fr24?.actualDistance ? formatDistance(fr24.actualDistance) : undefined}
                   accent="green"
+                />
+                <TimeCard
+                  label="Local at Aircraft"
+                  value={localAircraftTime ? localAircraftTime.time : "—"}
+                  sub={
+                    localAircraftTime
+                      ? `${localAircraftTime.offsetLabel}${positionIsEstimated ? " · est" : ""}`
+                      : undefined
+                  }
+                  accent="cyan"
                 />
               </div>
             </div>

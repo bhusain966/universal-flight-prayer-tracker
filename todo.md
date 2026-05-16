@@ -83,9 +83,14 @@
 - [x] Initialize private GitHub repository and push all code
 
 ## Updates (Round 12 — Timezone Fix)
-- [ ] Investigate AirLabs time fields: confirm all datetimes are UTC, understand what timezone fields are available
-- [ ] Fetch airport timezone from AirLabs /airports endpoint (timezone field) for both dep and arr airports
-- [ ] Convert schedule times to local airport time server-side using the airport timezone
-- [ ] Update schedule panel UI: show local time as primary, UTC as secondary label
-- [ ] Update identity bar / flight times strip to show correct local departure time
-- [ ] Add regression tests for timezone conversion
+- [x] Investigate AirLabs time fields: AirLabs returns both dep_time (local) and dep_time_utc (UTC) fields
+- [x] Confirmed AirLabs dep_time/arr_time are local airport time — no server-side conversion needed
+- [x] Fixed normalisation: local fields use normaliseLocalDatetime() (no Z), UTC fields use normaliseUtcDatetime() (Z suffix)
+- [x] Update schedule panel UI: show local time as primary, UTC as secondary label via LocalTimeDisplay component
+- [x] Update identity bar / flight times strip to show correct local departure time
+- [x] Add regression test: 'preserves local time fields without Z suffix' (55 tests passing)
+
+## Updates (Round 13 — Local Time at Aircraft)
+- [x] Add "Local Time at Aircraft" card to Flight Times panel using plane's longitude to compute UTC offset
+- [x] Card ticks every second (live clock), shows timezone offset label (e.g. UTC+3)
+- [x] Handles estimated position gracefully (shows UTC offset with '· est' suffix when position is estimated)
