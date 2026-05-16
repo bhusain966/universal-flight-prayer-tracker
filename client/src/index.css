@@ -43,83 +43,59 @@
 }
 
 :root {
-  --primary: var(--color-blue-700);
-  --primary-foreground: var(--color-blue-50);
-  --sidebar-primary: var(--color-blue-600);
-  --sidebar-primary-foreground: var(--color-blue-50);
-  --chart-1: var(--color-blue-300);
-  --chart-2: var(--color-blue-500);
-  --chart-3: var(--color-blue-600);
-  --chart-4: var(--color-blue-700);
-  --chart-5: var(--color-blue-800);
-  --radius: 0.65rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.235 0.015 65);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.235 0.015 65);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.235 0.015 65);
-  --secondary: oklch(0.98 0.001 286.375);
-  --secondary-foreground: oklch(0.4 0.015 65);
-  --muted: oklch(0.967 0.001 286.375);
-  --muted-foreground: oklch(0.552 0.016 285.938);
-  --accent: oklch(0.967 0.001 286.375);
-  --accent-foreground: oklch(0.141 0.005 285.823);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.92 0.004 286.32);
-  --input: oklch(0.92 0.004 286.32);
-  --ring: oklch(0.623 0.214 259.815);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.235 0.015 65);
-  --sidebar-accent: oklch(0.967 0.001 286.375);
-  --sidebar-accent-foreground: oklch(0.141 0.005 285.823);
-  --sidebar-border: oklch(0.92 0.004 286.32);
-  --sidebar-ring: oklch(0.623 0.214 259.815);
+  /* Aviation dark theme — always dark */
+  --primary: oklch(0.72 0.18 55);
+  --primary-foreground: oklch(0.10 0.015 240);
+  --radius: 0.5rem;
+  --background: oklch(0.10 0.015 240);
+  --foreground: oklch(0.92 0.01 220);
+  --card: oklch(0.14 0.018 240);
+  --card-foreground: oklch(0.92 0.01 220);
+  --popover: oklch(0.14 0.018 240);
+  --popover-foreground: oklch(0.92 0.01 220);
+  --secondary: oklch(0.18 0.02 240);
+  --secondary-foreground: oklch(0.80 0.01 220);
+  --muted: oklch(0.18 0.02 240);
+  --muted-foreground: oklch(0.55 0.01 220);
+  --accent: oklch(0.22 0.025 240);
+  --accent-foreground: oklch(0.92 0.01 220);
+  --destructive: oklch(0.55 0.22 25);
+  --destructive-foreground: oklch(0.92 0.01 220);
+  --border: oklch(0.22 0.02 240);
+  --input: oklch(0.18 0.02 240);
+  --ring: oklch(0.72 0.18 55);
+  --chart-1: oklch(0.72 0.18 55);
+  --chart-2: oklch(0.65 0.18 145);
+  --chart-3: oklch(0.62 0.18 230);
+  --chart-4: oklch(0.60 0.22 25);
+  --chart-5: oklch(0.70 0.15 300);
+  --sidebar: oklch(0.12 0.016 240);
+  --sidebar-foreground: oklch(0.92 0.01 220);
+  --sidebar-primary: oklch(0.72 0.18 55);
+  --sidebar-primary-foreground: oklch(0.10 0.015 240);
+  --sidebar-accent: oklch(0.18 0.02 240);
+  --sidebar-accent-foreground: oklch(0.92 0.01 220);
+  --sidebar-border: oklch(0.22 0.02 240);
+  --sidebar-ring: oklch(0.72 0.18 55);
 }
 
-.dark {
-  --primary: var(--color-blue-700);
-  --primary-foreground: var(--color-blue-50);
-  --sidebar-primary: var(--color-blue-500);
-  --sidebar-primary-foreground: var(--color-blue-50);
-  --background: oklch(0.141 0.005 285.823);
-  --foreground: oklch(0.85 0.005 65);
-  --card: oklch(0.21 0.006 285.885);
-  --card-foreground: oklch(0.85 0.005 65);
-  --popover: oklch(0.21 0.006 285.885);
-  --popover-foreground: oklch(0.85 0.005 65);
-  --secondary: oklch(0.24 0.006 286.033);
-  --secondary-foreground: oklch(0.7 0.005 65);
-  --muted: oklch(0.274 0.006 286.033);
-  --muted-foreground: oklch(0.705 0.015 286.067);
-  --accent: oklch(0.274 0.006 286.033);
-  --accent-foreground:  oklch(0.92 0.005 65);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.488 0.243 264.376);
-  --chart-1: var(--color-blue-300);
-  --chart-2: var(--color-blue-500);
-  --chart-3: var(--color-blue-600);
-  --chart-4: var(--color-blue-700);
-  --chart-5: var(--color-blue-800);
-  --sidebar: oklch(0.21 0.006 285.885);
-  --sidebar-foreground: oklch(0.85 0.005 65);
-  --sidebar-accent: oklch(0.274 0.006 286.033);
-  --sidebar-accent-foreground:  oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.488 0.243 264.376);
-}
+/* No separate .dark block — always dark aviation theme */
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
+  html { color-scheme: dark; }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans antialiased;
+    background-image:
+      radial-gradient(ellipse at 20% 10%, oklch(0.16 0.03 240 / 0.4) 0%, transparent 60%),
+      radial-gradient(ellipse at 80% 80%, oklch(0.13 0.025 250 / 0.3) 0%, transparent 60%);
   }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { @apply bg-border rounded-full; }
+  ::-webkit-scrollbar-thumb:hover { opacity: 0.7; }
   button:not(:disabled),
   [role="button"]:not([aria-disabled="true"]),
   [type="button"]:not(:disabled),
@@ -169,9 +145,75 @@
 
   @media (min-width: 1024px) {
     .container {
-      padding-left: 2rem; /* 32px - desktop padding */
+      padding-left: 2rem;
       padding-right: 2rem;
-      max-width: 1280px; /* Standard content width */
+      max-width: 1400px;
     }
   }
+}
+
+/* ── Aviation Components ─────────────────────────────────────────────── */
+.avi-panel {
+  @apply bg-card border border-border rounded-lg overflow-hidden;
+  box-shadow: 0 1px 3px oklch(0 0 0 / 0.4), inset 0 1px 0 oklch(1 0 0 / 0.04);
+}
+.avi-panel-header {
+  @apply flex items-center gap-2 px-4 py-2.5 border-b border-border;
+  background: oklch(0.16 0.02 240);
+}
+.avi-panel-header-title {
+  @apply text-xs font-semibold tracking-widest uppercase text-muted-foreground;
+}
+.avi-value { @apply font-mono text-foreground; }
+.avi-label { @apply text-xs text-muted-foreground uppercase tracking-wider; }
+
+.status-badge {
+  @apply inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-semibold uppercase tracking-wider;
+}
+.status-active    { background: oklch(0.65 0.18 145 / 0.15); color: oklch(0.65 0.18 145); border: 1px solid oklch(0.65 0.18 145 / 0.3); }
+.status-landed    { background: oklch(0.62 0.18 230 / 0.15); color: oklch(0.62 0.18 230); border: 1px solid oklch(0.62 0.18 230 / 0.3); }
+.status-delayed   { background: oklch(0.72 0.18 55 / 0.15);  color: oklch(0.72 0.18 55);  border: 1px solid oklch(0.72 0.18 55 / 0.3); }
+.status-cancelled { background: oklch(0.55 0.22 25 / 0.15);  color: oklch(0.55 0.22 25);  border: 1px solid oklch(0.55 0.22 25 / 0.3); }
+.status-scheduled { @apply bg-muted text-muted-foreground border border-border; }
+
+.prayer-row {
+  @apply flex items-center justify-between px-4 py-2.5 border-b border-border/50 last:border-0;
+  transition: background 150ms ease;
+}
+.prayer-row:hover { background: oklch(0.18 0.02 240); }
+.prayer-row.next  { background: oklch(0.72 0.18 55 / 0.08); }
+.prayer-row.past  { opacity: 0.4; }
+
+.countdown-digit { @apply font-mono text-3xl font-bold tabular-nums; color: oklch(0.72 0.18 55); }
+
+.flight-search-input {
+  @apply bg-input border border-border rounded-md px-4 py-3 text-foreground font-mono text-lg
+         placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring
+         uppercase tracking-widest w-full;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+.flight-search-input:focus { border-color: oklch(0.72 0.18 55 / 0.6); }
+
+.telem-grid { @apply grid grid-cols-2 sm:grid-cols-3 gap-px bg-border; }
+.telem-cell { @apply bg-card flex flex-col gap-0.5 px-4 py-3; }
+
+.pulse-dot {
+  @apply w-2 h-2 rounded-full;
+  background: oklch(0.65 0.18 145);
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 oklch(0.65 0.18 145 / 0.6); }
+  50%       { opacity: 0.7; box-shadow: 0 0 0 5px oklch(0.65 0.18 145 / 0); }
+}
+
+.skeleton {
+  @apply rounded;
+  background: linear-gradient(90deg, oklch(0.18 0.02 240) 25%, oklch(0.22 0.025 240) 50%, oklch(0.18 0.02 240) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+@keyframes shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }

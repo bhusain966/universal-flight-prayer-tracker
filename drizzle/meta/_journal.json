@@ -1,5 +1,13 @@
 {
   "version": "7",
   "dialect": "mysql",
-  "entries": []
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1778898722081,
+      "tag": "0000_graceful_excalibur",
+      "breakpoints": true
+    }
+  ]
 }
