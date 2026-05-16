@@ -4,6 +4,7 @@ import { publicProcedure, router } from "../_core/trpc";
 import { fetchFlightData } from "../airlabs";
 import { fetchFr24FlightData } from "../fr24";
 import { getPrayerTimesResult } from "../prayer";
+import { fetchWeatherAtPosition } from "../weather";
 
 export const flightRouter = router({
   /**
@@ -16,7 +17,7 @@ export const flightRouter = router({
       try {
         const normalized = input.flightIata.trim().toUpperCase();
 
-        // Fetch AirLabs (primary) and FR24 (enrichment) in parallel
+        // Fetch AirLabs (primary), FR24 (enrichment) in parallel
         const [airlabsData, fr24Data] = await Promise.allSettled([
           fetchFlightData(normalized),
           fetchFr24FlightData(normalized),
@@ -29,9 +30,21 @@ export const flightRouter = router({
         const data = airlabsData.value;
         const fr24 = fr24Data.status === "fulfilled" ? fr24Data.value : null;
 
+        // Fetch weather only if we have a live position
+        const flight = data?.flight;
+        const weather =
+          flight?.lat != null && flight?.lng != null
+            ? await fetchWeatherAtPosition(
+                flight.lat,
+                flight.lng,
+                flight.alt ?? 35000,
+              ).catch(() => null)
+            : null;
+
         return {
           success: true as const,
           data,
+          weather,
           fr24: fr24
             ? {
                 callsign: fr24.live?.callsign,

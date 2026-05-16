@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useParams, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import FlightMap from "@/components/FlightMap";
 import PrayerPanel from "@/components/PrayerPanel";
@@ -15,8 +16,9 @@ import {
   Timer,
   Hourglass,
   ArrowRight,
-  Gauge,
-  Navigation,
+  Wind,
+  Thermometer,
+  Share2,
 } from "lucide-react";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -62,6 +64,13 @@ function formatDelay(mins?: number | null): string {
 function formatDistance(km?: number | null): string {
   if (km == null) return "—";
   return `${Math.round(km).toLocaleString()} km`;
+}
+
+function windDirectionToCompass(deg: number): string {
+  const dirs = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+                "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
+  const idx = Math.round(((deg % 360) + 360) % 360 / 22.5) % 16;
+  return dirs[idx];
 }
 
 function getStatusClass(status?: string): string {
@@ -271,10 +280,23 @@ function MoonIcon({ className }: { className?: string }) {
 const REFRESH_INTERVAL_MS = 15 * 60 * 1000;
 
 export default function Home() {
+  const params = useParams<{ flightIata?: string }>();
+  const [, navigate] = useLocation();
   const [inputValue, setInputValue] = useState("");
   const [flightIata, setFlightIata] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const [copied, setCopied] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // On mount: if the URL has /track/:flightIata, auto-load that flight
+  useEffect(() => {
+    const urlFlight = params.flightIata?.toUpperCase();
+    if (urlFlight && urlFlight.length >= 2) {
+      setFlightIata(urlFlight);
+      setInputValue(urlFlight);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const { data, isLoading, error, refetch, isFetching } =
     trpc.flight.lookup.useQuery(
@@ -295,7 +317,9 @@ export default function Home() {
     const val = inputValue.trim().toUpperCase();
     if (val.length < 2) return;
     setFlightIata(val);
-  }, [inputValue]);
+    // Push to URL for deep linking / bookmarking
+    navigate(`/track/${val}`);
+  }, [inputValue, navigate]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") handleSearch();
@@ -305,9 +329,22 @@ export default function Home() {
   const depAirport = data?.data?.depAirport;
   const arrAirport = data?.data?.arrAirport;
   const fr24 = data?.fr24;
+  const weather = data?.weather ?? null;
   const hasLiveTelemetry = flight?.lat != null && flight?.lng != null;
   const depDelay = flight?.dep_delay;
   const arrDelay = flight?.arr_delay;
+
+  const handleShare = useCallback(async () => {
+    const url = `${window.location.origin}/track/${flightIata}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // fallback: open in new tab
+      window.open(url, "_blank");
+    }
+  }, [flightIata]);
 
   // Compute time metrics
   const depActual = flight?.dep_actual_utc ?? flight?.dep_estimated_utc;
@@ -398,7 +435,7 @@ export default function Home() {
             </div>
             <div className="flex gap-2 flex-wrap justify-center">
               {["QR726", "EK202", "BA117", "SQ321"].map((f) => (
-                <button key={f} onClick={() => { setInputValue(f); setFlightIata(f); }}
+                <button key={f} onClick={() => { setInputValue(f); setFlightIata(f); navigate(`/track/${f}`); }}
                   className="px-3 py-1.5 rounded-md text-xs font-mono border border-border text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors">
                   {f}
                 </button>
@@ -453,7 +490,7 @@ export default function Home() {
                   <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-primary/10 border border-primary/20 shrink-0">
                     <Plane className="w-5 h-5 text-primary" />
                   </div>
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-2xl font-bold font-mono text-foreground">{flight?.flight_iata}</span>
                       <span className={`status-badge ${getStatusClass(flight?.status)}`}>
@@ -470,6 +507,15 @@ export default function Home() {
                       {fr24?.category ? ` · ${fr24.category}` : ""}
                     </p>
                   </div>
+                  {/* Share button */}
+                  <button
+                    onClick={handleShare}
+                    title="Copy shareable link"
+                    className="ml-auto shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-border/60 text-xs text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors"
+                  >
+                    <Share2 className="w-3 h-3" />
+                    <span className="hidden sm:inline">{copied ? "Copied!" : "Share"}</span>
+                  </button>
                 </div>
 
                 {/* Route row */}
@@ -604,7 +650,44 @@ export default function Home() {
               </div>
             </div>
 
-            {/* ── 5. Schedule ── */}
+            {/* ── 5. Wind & Weather (Open-Meteo) ── */}
+            {weather && (
+              <div className="avi-panel">
+                <PanelHeader
+                  icon={<Wind className="w-3.5 h-3.5" />}
+                  title="Wind & Atmosphere"
+                  badge={`@ ${weather.pressureLevel} (~${weather.altitudeFt.toLocaleString()} ft)`}
+                />
+                <div className="telem-grid">
+                  <TelemCell
+                    label="Wind Speed"
+                    value={weather.windSpeedKmh}
+                    unit="km/h"
+                    highlight
+                  />
+                  <TelemCell
+                    label="Wind Direction"
+                    value={`${weather.windDirectionDeg}° ${windDirectionToCompass(weather.windDirectionDeg)}`}
+                  />
+                  <TelemCell
+                    label="Temperature"
+                    value={`${weather.temperatureCelsius}°C`}
+                    highlight
+                  />
+                  <TelemCell
+                    label="Pressure Level"
+                    value={weather.pressureLevel}
+                  />
+                </div>
+                <div className="px-4 pb-2">
+                  <p className="text-[10px] text-muted-foreground/50">
+                    Source: Open-Meteo · Pressure-level forecast · Updated {new Date(weather.fetchedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} UTC
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* ── 6. Schedule ── */}
             <div className="avi-panel">
               <PanelHeader icon={<Clock className="w-3.5 h-3.5" />} title="Schedule" />
               <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-border">

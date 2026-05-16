@@ -50,3 +50,10 @@
 - [x] Create a dedicated, clearly visible "Flight Times" section with Elapsed, Remaining, ETA, Total duration as large prominent cards
 - [x] Full mobile-first layout rewrite — all panels readable on phone screen, no overflow, no hidden data
 - [x] Fix route arc trace — fitBounds now uses full arc points array (not just 3 endpoints), aircraft insertion point uses unwrapped longitude
+
+## Updates (Round 7)
+- [x] Add Open-Meteo wind/temperature server-side integration (wind speed, wind direction, temperature at altitude)
+- [x] Display wind & temperature panel in the flight dashboard
+- [x] Add URL deep linking: /track/:flightIata route that auto-loads the flight on open
+- [x] Update search to push URL when flight is searched
+- [x] Shareable URL works on direct open (bookmarkable)
