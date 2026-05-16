@@ -61,3 +61,9 @@
 ## Updates (Round 8)
 - [x] Fix date parsing: AirLabs returns space-separated datetimes ('2026-05-16 00:19') not ISO format — fixed in router with normDt() helper, 2 regression tests added
 - [x] Verify Elapsed, Remaining, ETA UTC, Total Duration all populate correctly with live QR726 data (48 tests passing)
+
+## Updates (Round 9)
+- [x] Add prayer method selector dropdown (MWL, ISNA, Makkah, Egypt, Karachi) to the prayer panel
+- [x] Persist selected method in localStorage so it survives page refresh
+- [x] Pass selected method to the prayerTimes tRPC query
+- [x] Add vitest tests for each calculation method (6 new tests, 54 total passing)
