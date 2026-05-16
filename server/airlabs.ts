@@ -132,13 +132,14 @@ async function airlabsGet<T>(endpoint: string, params: Record<string, string>): 
 export async function fetchFlightData(flightIata: string): Promise<FlightFullData> {
   const normalized = flightIata.toUpperCase().trim();
 
-  // Try live flights endpoint first (returns live telemetry)
+  // Try live flights endpoint first (returns live telemetry as an ARRAY)
   let liveData: AirlabsFlightData | undefined;
   try {
     const liveResults = await airlabsGet<AirlabsFlightData[]>("flights", {
       flight_iata: normalized,
     });
-    if (liveResults && liveResults.length > 0) {
+    // /flights always returns an array; may be empty if aircraft not broadcasting
+    if (Array.isArray(liveResults) && liveResults.length > 0) {
       liveData = liveResults[0];
     }
   } catch {
@@ -146,13 +147,19 @@ export async function fetchFlightData(flightIata: string): Promise<FlightFullDat
   }
 
   // Always fetch schedule/status data from /flight endpoint
+  // NOTE: /flight returns a SINGLE OBJECT (not an array) unlike /flights
   let scheduleData: AirlabsFlightData | undefined;
   try {
-    const schedResults = await airlabsGet<AirlabsFlightData[]>("flight", {
+    // The generic helper wraps response — /flight returns a single object, not array
+    const raw = await airlabsGet<AirlabsFlightData | AirlabsFlightData[]>("flight", {
       flight_iata: normalized,
     });
-    if (schedResults && schedResults.length > 0) {
-      scheduleData = schedResults[0];
+    if (Array.isArray(raw)) {
+      // Defensive: if API ever returns array, take first element
+      if (raw.length > 0) scheduleData = raw[0];
+    } else if (raw && typeof raw === "object" && "flight_iata" in raw) {
+      // Normal case: single object
+      scheduleData = raw as AirlabsFlightData;
     }
   } catch {
     // Schedule data not available

@@ -51,11 +51,13 @@ describe("fetchWeatherAtPosition", () => {
   });
 
   it("returns structured weather data on successful API response", async () => {
+    // Use a single-entry array so the test is time-independent
+    // (the service picks the closest hour; with only one entry it always picks index 0)
     const mockHourly = {
-      time: ["2026-05-16T04:00", "2026-05-16T05:00"],
-      "windspeed_250hPa": [85.2, 90.1],
-      "winddirection_250hPa": [270, 280],
-      "temperature_250hPa": [-55.3, -56.1],
+      time: ["2099-01-01T00:00"], // far-future so no accidental hour match
+      "windspeed_250hPa": [85.2],
+      "winddirection_250hPa": [270],
+      "temperature_250hPa": [-55.3],
     };
 
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
