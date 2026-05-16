@@ -20,12 +20,9 @@ const TILE_ATTRIBUTION =
   '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
 
 // ── Geodesic great-circle interpolation ──────────────────────────────────────
-// Uses spherical linear interpolation (slerp) in 3-D Cartesian space, then
-// projects back to lat/lng.  After generating all points we "unwrap" the
-// longitude sequence so that consecutive points never jump more than 180°,
-// which eliminates the sharp visual turn Leaflet draws when a route crosses
-// the antimeridian (±180°).
-
+// Spherical linear interpolation (slerp) in 3-D Cartesian space, projected
+// back to lat/lng.  Longitude unwrapping ensures consecutive points never
+// jump more than 180°, preventing the antimeridian "sharp turn" artefact.
 function greatCirclePoints(
   lat1: number, lng1: number,
   lat2: number, lng2: number,
@@ -37,7 +34,6 @@ function greatCirclePoints(
   const φ1 = toRad(lat1), λ1 = toRad(lng1);
   const φ2 = toRad(lat2), λ2 = toRad(lng2);
 
-  // Angular distance between the two points
   const d = 2 * Math.asin(
     Math.sqrt(
       Math.sin((φ2 - φ1) / 2) ** 2 +
@@ -60,16 +56,11 @@ function greatCirclePoints(
     rawPts.push([toDeg(φ), toDeg(λ)]);
   }
 
-  // ── Longitude unwrapping ─────────────────────────────────────────────────
-  // Walk through the points and adjust each longitude so it stays within
-  // ±180° of the previous one.  This keeps the polyline on one side of the
-  // map and prevents Leaflet from drawing a line that "wraps" across the
-  // globe the wrong way.
+  // Longitude unwrapping: keep consecutive longitudes within ±180° of each other
   const pts: L.LatLngTuple[] = [rawPts[0]];
   for (let i = 1; i < rawPts.length; i++) {
     let prevLng = pts[i - 1][1];
     let curLng = rawPts[i][1];
-    // Bring curLng within 180° of prevLng
     while (curLng - prevLng > 180) curLng -= 360;
     while (prevLng - curLng > 180) curLng += 360;
     pts.push([rawPts[i][0], curLng]);
@@ -78,7 +69,7 @@ function greatCirclePoints(
   return pts;
 }
 
-// Split the arc at the closest point to the aircraft position
+// Split the arc at the closest point to the aircraft's current position
 function splitArc(
   arc: L.LatLngTuple[],
   aircraftLat: number,
@@ -88,50 +79,65 @@ function splitArc(
   let minDist = Infinity;
   for (let i = 0; i < arc.length; i++) {
     const dlat = arc[i][0] - aircraftLat;
+    // Compare using the unwrapped longitude from the arc, not the raw aircraft lng
     const dlng = arc[i][1] - aircraftLng;
     const dist = dlat * dlat + dlng * dlng;
     if (dist < minDist) { minDist = dist; closestIdx = i; }
   }
-  const aircraftPt: L.LatLngTuple = [aircraftLat, aircraftLng];
+  // Use the arc's unwrapped longitude for the aircraft insertion point too
+  const aircraftPt: L.LatLngTuple = [aircraftLat, arc[closestIdx][1]];
   return {
     done: [...arc.slice(0, closestIdx + 1), aircraftPt],
     remaining: [aircraftPt, ...arc.slice(closestIdx + 1)],
   };
 }
 
+// Build a Leaflet LatLngBounds from an array of LatLngTuples (handles unwrapped lngs)
+function boundsFromPoints(pts: L.LatLngTuple[]): L.LatLngBounds {
+  let minLat = Infinity, maxLat = -Infinity;
+  let minLng = Infinity, maxLng = -Infinity;
+  for (const [lat, lng] of pts) {
+    if (lat < minLat) minLat = lat;
+    if (lat > maxLat) maxLat = lat;
+    if (lng < minLng) minLng = lng;
+    if (lng > maxLng) maxLng = lng;
+  }
+  return L.latLngBounds([[minLat, minLng], [maxLat, maxLng]]);
+}
+
 // ── Icon factories ────────────────────────────────────────────────────────────
 
 function makeAirplaneIcon(heading: number): L.DivIcon {
   const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="38" height="38"
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="40" height="40"
       style="transform:rotate(${heading}deg);transform-origin:center;
-             filter:drop-shadow(0 0 6px rgba(245,158,11,0.95)) drop-shadow(0 0 2px #000)">
+             filter:drop-shadow(0 0 8px rgba(245,158,11,1)) drop-shadow(0 0 3px #000)">
       <path d="M12 2L8 10H4L6 12H10L8 22H10L12 18L14 22H16L14 12H18L20 10H16L12 2Z"
         fill="#f59e0b" stroke="#0d1117" stroke-width="0.8"/>
     </svg>`;
   return L.divIcon({
     html: svg,
     className: "",
-    iconSize: [38, 38],
-    iconAnchor: [19, 19],
+    iconSize: [40, 40],
+    iconAnchor: [20, 20],
   });
 }
 
 function makeAirportIcon(iata: string, color: string): L.DivIcon {
   const html = `
     <div style="
-      width:34px; height:34px; border-radius:50%;
+      width:36px; height:36px; border-radius:50%;
       background:#0d1117; border:2.5px solid ${color};
       display:flex; align-items:center; justify-content:center;
       font-size:7px; font-weight:800; color:${color};
       font-family:monospace; line-height:1; text-align:center;
-      box-shadow:0 0 10px ${color}66;
+      box-shadow:0 0 12px ${color}88;
     ">${iata}</div>`;
   return L.divIcon({
     html,
     className: "",
-    iconSize: [34, 34],
-    iconAnchor: [17, 17],
+    iconSize: [36, 36],
+    iconAnchor: [18, 18],
   });
 }
 
@@ -170,8 +176,7 @@ export default function FlightMap({
       zoom: hasRoute ? 3 : 6,
       zoomControl: true,
       attributionControl: true,
-      // Allow the map to show coordinates outside ±180° so unwrapped
-      // polylines render correctly without jumping across the antimeridian.
+      // worldCopyJump: false so unwrapped polylines render without jumping
       worldCopyJump: false,
     });
 
@@ -207,10 +212,12 @@ export default function FlightMap({
     arrMarkerRef.current?.remove();      arrMarkerRef.current = null;
     aircraftRef.current?.remove();       aircraftRef.current = null;
 
-    const bounds: L.LatLngTuple[] = [];
+    // All arc points collected here for bounds calculation
+    let allArcPts: L.LatLngTuple[] = [];
 
     if (hasRoute) {
       const arc = greatCirclePoints(depLat!, depLng!, arrLat!, arrLng!, 120);
+      allArcPts = arc;
 
       if (hasPosition) {
         const { done, remaining } = splitArc(arc, lat!, lng!);
@@ -218,23 +225,23 @@ export default function FlightMap({
         // Completed portion — solid bright cyan
         routeDoneRef.current = L.polyline(done, {
           color: "#22d3ee",
-          weight: 3.5,
+          weight: 4,
           opacity: 1,
         }).addTo(map);
 
         // Remaining portion — dashed amber
         routeRemainingRef.current = L.polyline(remaining, {
           color: "#f59e0b",
-          weight: 2.5,
-          opacity: 0.65,
+          weight: 3,
+          opacity: 0.75,
           dashArray: "10 12",
         }).addTo(map);
       } else {
         // No live position — full arc in dashed amber
         routeRemainingRef.current = L.polyline(arc, {
           color: "#f59e0b",
-          weight: 2.5,
-          opacity: 0.7,
+          weight: 3,
+          opacity: 0.75,
           dashArray: "10 12",
         }).addTo(map);
       }
@@ -258,31 +265,28 @@ export default function FlightMap({
       })
         .addTo(map)
         .bindTooltip(`<b>${arrIata}</b> Arrival`, { direction: "top" });
-
-      bounds.push(depPt, arrPt);
     }
 
-    // Aircraft marker
+    // Aircraft marker — use raw lat/lng for the marker itself
     if (hasPosition) {
       aircraftRef.current = L.marker([lat!, lng!], {
         icon: makeAirplaneIcon(heading),
         title: "Aircraft",
         zIndexOffset: 1000,
       }).addTo(map);
-      bounds.push([lat!, lng!]);
     }
 
-    // Fit map to all markers with padding
-    if (bounds.length > 0) {
-      if (bounds.length === 1) {
-        map.setView(bounds[0], 6);
-      } else {
-        try {
-          map.fitBounds(L.latLngBounds(bounds), { padding: [55, 55], maxZoom: 8 });
-        } catch {
-          map.setView(bounds[0], 4);
-        }
+    // Fit map bounds using the full arc so the viewport matches the unwrapped polyline
+    if (allArcPts.length > 1) {
+      try {
+        const bounds = boundsFromPoints(allArcPts);
+        map.fitBounds(bounds, { padding: [50, 50], maxZoom: 7 });
+      } catch {
+        if (hasPosition) map.setView([lat!, lng!], 5);
+        else if (hasRoute) map.setView([depLat!, depLng!], 4);
       }
+    } else if (hasPosition) {
+      map.setView([lat!, lng!], 6);
     }
   }, [lat, lng, depLat, depLng, arrLat, arrLng, heading, hasPosition, hasRoute, depIata, arrIata]);
 

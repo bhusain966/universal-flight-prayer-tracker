@@ -45,3 +45,8 @@
 - [x] Add elapsed flight time (time since actual departure)
 - [x] Add remaining flight time (ETA minus now)
 - [x] Add estimated arrival time (ETA) prominently in schedule panel (34 tests total, all passing)
+
+## Updates (Round 6)
+- [x] Create a dedicated, clearly visible "Flight Times" section with Elapsed, Remaining, ETA, Total duration as large prominent cards
+- [x] Full mobile-first layout rewrite — all panels readable on phone screen, no overflow, no hidden data
+- [x] Fix route arc trace — fitBounds now uses full arc points array (not just 3 endpoints), aircraft insertion point uses unwrapped longitude

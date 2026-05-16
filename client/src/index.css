@@ -197,6 +197,10 @@
 .telem-grid { @apply grid grid-cols-2 sm:grid-cols-3 gap-px bg-border; }
 .telem-cell { @apply bg-card flex flex-col gap-0.5 px-4 py-3; }
 
+/* Flight times strip: 2-col on mobile, 4-col on sm+ with dividers */
+.time-strip-grid { @apply grid grid-cols-2 sm:grid-cols-4 gap-px bg-border; }
+.time-strip-cell { @apply bg-card flex flex-col items-center justify-center text-center px-3 py-5; }
+
 .pulse-dot {
   @apply w-2 h-2 rounded-full;
   background: oklch(0.65 0.18 145);
