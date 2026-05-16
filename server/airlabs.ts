@@ -64,10 +64,11 @@ export interface AirlabsFlightData {
   type?: string;
   msn?: string;
   hex?: string;
-  // Calculated
+  // Calculated / returned by /flight
   percent?: number;
-  eta?: string;
+  eta?: number;   // minutes remaining to arrival
   eta_utc?: string;
+  utc?: string;   // current UTC time from AirLabs server
 }
 
 export interface AirlabsAirportData {
@@ -171,14 +172,17 @@ export async function fetchFlightData(flightIata: string): Promise<FlightFullDat
     dep_gate: scheduleData?.dep_gate ?? liveData?.dep_gate,
     arr_terminal: scheduleData?.arr_terminal ?? liveData?.arr_terminal,
     arr_gate: scheduleData?.arr_gate ?? liveData?.arr_gate,
-    // Live telemetry from liveData
-    lat: liveData?.lat,
-    lng: liveData?.lng,
-    alt: liveData?.alt,
-    speed: liveData?.speed,
-    dir: liveData?.dir,
-    v_speed: liveData?.v_speed,
-    percent: liveData?.percent,
+    // Live telemetry from liveData (prefer liveData, fallback to scheduleData)
+    lat: liveData?.lat ?? scheduleData?.lat,
+    lng: liveData?.lng ?? scheduleData?.lng,
+    alt: liveData?.alt ?? scheduleData?.alt,
+    speed: liveData?.speed ?? scheduleData?.speed,
+    dir: liveData?.dir ?? scheduleData?.dir,
+    v_speed: liveData?.v_speed ?? scheduleData?.v_speed,
+    percent: liveData?.percent ?? scheduleData?.percent,
+    // ETA and server UTC from /flight endpoint
+    eta: scheduleData?.eta ?? liveData?.eta,
+    utc: scheduleData?.utc ?? liveData?.utc,
   };
 
   // Fetch airport coordinates for map rendering (only if not already in flight data)

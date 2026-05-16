@@ -1,5 +1,6 @@
-import { useEffect, useRef, useCallback } from "react";
-import { MapView } from "./Map";
+import { useEffect, useRef } from "react";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 
 interface FlightMapProps {
   lat?: number;
@@ -13,21 +14,43 @@ interface FlightMapProps {
   arrIata?: string;
 }
 
-// Dark aviation map styles
-const DARK_MAP_STYLES: google.maps.MapTypeStyle[] = [
-  { elementType: "geometry", stylers: [{ color: "#0d1117" }] },
-  { elementType: "labels.text.stroke", stylers: [{ color: "#0d1117" }] },
-  { elementType: "labels.text.fill", stylers: [{ color: "#4a5568" }] },
-  { featureType: "administrative", elementType: "geometry.stroke", stylers: [{ color: "#1e2a3a" }] },
-  { featureType: "landscape.natural", elementType: "geometry", stylers: [{ color: "#0d1520" }] },
-  { featureType: "poi", elementType: "geometry", stylers: [{ color: "#111827" }] },
-  { featureType: "road", elementType: "geometry", stylers: [{ color: "#1a2332" }] },
-  { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#1e2d42" }] },
-  { featureType: "transit", elementType: "geometry", stylers: [{ color: "#111827" }] },
-  { featureType: "water", elementType: "geometry", stylers: [{ color: "#0a1628" }] },
-  { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#1e3a5f" }] },
-  { featureType: "administrative.country", elementType: "geometry.stroke", stylers: [{ color: "#1e3a5f" }] },
-];
+// Dark tile layer — CartoDB Dark Matter (no API key required)
+const DARK_TILE_URL = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+const TILE_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
+
+// SVG airplane icon rotated by heading
+function makeAirplaneIcon(heading: number): L.DivIcon {
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="32" height="32"
+      style="transform: rotate(${heading}deg); transform-origin: center; filter: drop-shadow(0 0 4px rgba(245,158,11,0.6))">
+      <path d="M12 2L8 10H4L6 12H10L8 22H10L12 18L14 22H16L14 12H18L20 10H16L12 2Z"
+        fill="#f59e0b" stroke="#0d1117" stroke-width="0.5"/>
+    </svg>`;
+  return L.divIcon({
+    html: svg,
+    className: "",
+    iconSize: [32, 32],
+    iconAnchor: [16, 16],
+  });
+}
+
+// Airport circle marker
+function makeAirportIcon(iata: string): L.DivIcon {
+  const html = `
+    <div style="
+      width:28px; height:28px; border-radius:50%;
+      background:#1e3a5f; border:2px solid #3b82f6;
+      display:flex; align-items:center; justify-content:center;
+      font-size:8px; font-weight:700; color:#94a3b8;
+      font-family:monospace; line-height:1;
+    ">${iata}</div>`;
+  return L.divIcon({
+    html,
+    className: "",
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+  });
+}
 
 export default function FlightMap({
   lat,
@@ -37,147 +60,124 @@ export default function FlightMap({
   arrLat,
   arrLng,
   heading = 0,
-  depIata,
-  arrIata,
+  depIata = "DEP",
+  arrIata = "ARR",
 }: FlightMapProps) {
-  const mapRef = useRef<google.maps.Map | null>(null);
-  const aircraftMarkerRef = useRef<google.maps.Marker | null>(null);
-  const routePolylineRef = useRef<google.maps.Polyline | null>(null);
-  const depMarkerRef = useRef<google.maps.Marker | null>(null);
-  const arrMarkerRef = useRef<google.maps.Marker | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<L.Map | null>(null);
+  const aircraftRef = useRef<L.Marker | null>(null);
+  const routeRef = useRef<L.Polyline | null>(null);
+  const depMarkerRef = useRef<L.Marker | null>(null);
+  const arrMarkerRef = useRef<L.Marker | null>(null);
 
   const hasPosition = lat !== undefined && lng !== undefined;
   const hasRoute =
-    depLat !== undefined &&
-    depLng !== undefined &&
-    arrLat !== undefined &&
-    arrLng !== undefined;
+    depLat !== undefined && depLng !== undefined &&
+    arrLat !== undefined && arrLng !== undefined;
 
-  const centerLat = lat ?? depLat ?? 25;
-  const centerLng = lng ?? depLng ?? 45;
+  // Initialise map once
+  useEffect(() => {
+    if (!containerRef.current || mapRef.current) return;
 
-  // Clear all overlays
-  const clearOverlays = useCallback(() => {
-    if (routePolylineRef.current) { routePolylineRef.current.setMap(null); routePolylineRef.current = null; }
-    if (depMarkerRef.current) { depMarkerRef.current.setMap(null); depMarkerRef.current = null; }
-    if (arrMarkerRef.current) { arrMarkerRef.current.setMap(null); arrMarkerRef.current = null; }
-    if (aircraftMarkerRef.current) { aircraftMarkerRef.current.setMap(null); aircraftMarkerRef.current = null; }
-  }, []);
+    const centerLat = lat ?? depLat ?? 25;
+    const centerLng = lng ?? depLng ?? 45;
 
-  // Draw all overlays from scratch
-  const drawOverlays = useCallback(() => {
+    const map = L.map(containerRef.current, {
+      center: [centerLat, centerLng],
+      zoom: hasRoute ? 4 : 6,
+      zoomControl: true,
+      attributionControl: true,
+    });
+
+    L.tileLayer(DARK_TILE_URL, {
+      attribution: TILE_ATTRIBUTION,
+      subdomains: "abcd",
+      maxZoom: 19,
+    }).addTo(map);
+
+    mapRef.current = map;
+
+    // Cleanup on unmount
+    return () => {
+      map.remove();
+      mapRef.current = null;
+      aircraftRef.current = null;
+      routeRef.current = null;
+      depMarkerRef.current = null;
+      arrMarkerRef.current = null;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // intentionally run once
+
+  // Redraw all overlays whenever props change
+  useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    clearOverlays();
+    // Clear existing overlays
+    if (routeRef.current) { routeRef.current.remove(); routeRef.current = null; }
+    if (depMarkerRef.current) { depMarkerRef.current.remove(); depMarkerRef.current = null; }
+    if (arrMarkerRef.current) { arrMarkerRef.current.remove(); arrMarkerRef.current = null; }
+    if (aircraftRef.current) { aircraftRef.current.remove(); aircraftRef.current = null; }
 
+    const bounds: L.LatLngTuple[] = [];
+
+    // Route arc
     if (hasRoute) {
-      routePolylineRef.current = new google.maps.Polyline({
-        path: [
-          { lat: depLat!, lng: depLng! },
-          { lat: arrLat!, lng: arrLng! },
-        ],
-        geodesic: true,
-        strokeColor: "#f59e0b",
-        strokeOpacity: 0,
-        strokeWeight: 2,
-        icons: [
-          {
-            icon: {
-              path: "M 0,-1 0,1",
-              strokeOpacity: 0.7,
-              strokeColor: "#f59e0b",
-              scale: 3,
-            },
-            offset: "0",
-            repeat: "18px",
-          },
-        ],
-        map,
-      });
+      routeRef.current = L.polyline(
+        [[depLat!, depLng!], [arrLat!, arrLng!]],
+        {
+          color: "#f59e0b",
+          weight: 2,
+          opacity: 0.6,
+          dashArray: "6 8",
+        }
+      ).addTo(map);
 
-      depMarkerRef.current = new google.maps.Marker({
-        position: { lat: depLat!, lng: depLng! },
-        map,
-        label: { text: depIata ?? "DEP", color: "#94a3b8", fontSize: "10px", fontWeight: "700" },
-        icon: {
-          path: google.maps.SymbolPath.CIRCLE,
-          fillColor: "#1e3a5f",
-          fillOpacity: 1,
-          strokeColor: "#3b82f6",
-          strokeWeight: 2,
-          scale: 8,
-        },
+      depMarkerRef.current = L.marker([depLat!, depLng!], {
+        icon: makeAirportIcon(depIata),
         title: depIata,
-        zIndex: 50,
-      });
+        zIndexOffset: 50,
+      })
+        .addTo(map)
+        .bindTooltip(depIata, { permanent: false, direction: "top" });
 
-      arrMarkerRef.current = new google.maps.Marker({
-        position: { lat: arrLat!, lng: arrLng! },
-        map,
-        label: { text: arrIata ?? "ARR", color: "#94a3b8", fontSize: "10px", fontWeight: "700" },
-        icon: {
-          path: google.maps.SymbolPath.CIRCLE,
-          fillColor: "#1e3a5f",
-          fillOpacity: 1,
-          strokeColor: "#3b82f6",
-          strokeWeight: 2,
-          scale: 8,
-        },
+      arrMarkerRef.current = L.marker([arrLat!, arrLng!], {
+        icon: makeAirportIcon(arrIata),
         title: arrIata,
-        zIndex: 50,
-      });
+        zIndexOffset: 50,
+      })
+        .addTo(map)
+        .bindTooltip(arrIata, { permanent: false, direction: "top" });
+
+      bounds.push([depLat!, depLng!], [arrLat!, arrLng!]);
     }
 
+    // Aircraft marker
     if (hasPosition) {
-      aircraftMarkerRef.current = new google.maps.Marker({
-        position: { lat: lat!, lng: lng! },
-        map,
-        icon: {
-          path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-          fillColor: "#f59e0b",
-          fillOpacity: 1,
-          strokeColor: "#0d1117",
-          strokeWeight: 1.5,
-          scale: 6,
-          rotation: heading,
-        },
+      aircraftRef.current = L.marker([lat!, lng!], {
+        icon: makeAirplaneIcon(heading),
         title: "Aircraft",
-        zIndex: 100,
-      });
+        zIndexOffset: 1000,
+      }).addTo(map);
+
+      bounds.push([lat!, lng!]);
     }
 
-    // Fit bounds
-    if (hasRoute) {
-      const bounds = new google.maps.LatLngBounds();
-      bounds.extend({ lat: depLat!, lng: depLng! });
-      bounds.extend({ lat: arrLat!, lng: arrLng! });
-      if (hasPosition) bounds.extend({ lat: lat!, lng: lng! });
-      map.fitBounds(bounds, { top: 50, bottom: 50, left: 50, right: 50 });
-    } else if (hasPosition) {
-      map.setCenter({ lat: lat!, lng: lng! });
-      map.setZoom(6);
+    // Fit map to all markers
+    if (bounds.length > 0) {
+      if (bounds.length === 1) {
+        map.setView(bounds[0], 6);
+      } else {
+        map.fitBounds(L.latLngBounds(bounds), { padding: [40, 40] });
+      }
     }
-  }, [lat, lng, depLat, depLng, arrLat, arrLng, heading, hasPosition, hasRoute, depIata, arrIata, clearOverlays]);
-
-  function handleMapReady(map: google.maps.Map) {
-    mapRef.current = map;
-    map.setOptions({ styles: DARK_MAP_STYLES });
-    drawOverlays();
-  }
-
-  // Redraw whenever any prop changes (new flight searched, position update)
-  useEffect(() => {
-    if (!mapRef.current) return;
-    drawOverlays();
-  }, [drawOverlays]);
+  }, [lat, lng, depLat, depLng, arrLat, arrLng, heading, hasPosition, hasRoute, depIata, arrIata]);
 
   return (
-    <MapView
-      initialCenter={{ lat: centerLat, lng: centerLng }}
-      initialZoom={hasRoute ? 4 : 6}
-      onMapReady={handleMapReady}
-      className="w-full h-full min-h-[340px]"
+    <div
+      ref={containerRef}
+      style={{ width: "100%", height: "100%", minHeight: 340 }}
     />
   );
 }

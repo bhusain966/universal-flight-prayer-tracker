@@ -23,3 +23,9 @@
 ## Testing
 - [x] Vitest unit tests for prayer calculation logic (12 tests passing)
 - [x] Vitest unit test for auth logout (1 test passing)
+
+## Updates (Round 2)
+- [x] Replace Google Maps with Leaflet + dark tile layer (no Google Maps dependency)
+- [x] Change auto-refresh interval from 30 seconds to 15 minutes (rate limit protection)
+- [x] Display ETA field (minutes remaining) from AirLabs in the schedule panel
+- [x] Display UTC server time from AirLabs response

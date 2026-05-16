@@ -124,8 +124,8 @@ export default function Home() {
       { flightIata: flightIata ?? "" },
       {
         enabled: !!flightIata,
-        refetchInterval: 30_000,
-        staleTime: 25_000,
+        refetchInterval: 15 * 60 * 1000, // 15 minutes — respects AirLabs rate limits
+        staleTime: 14 * 60 * 1000,
         retry: 1,
       }
     );
@@ -597,6 +597,14 @@ export default function Home() {
                             {formatDelay(arrDelay)}
                           </div>
                         </div>
+                        {flight?.eta != null && (
+                          <div>
+                            <div className="avi-label mb-0.5">ETA (remaining)</div>
+                            <div className="avi-value text-sm font-semibold text-primary">
+                              {Math.floor(flight.eta / 60)}h {flight.eta % 60}m
+                            </div>
+                          </div>
+                        )}
                         <div>
                           <div className="avi-label mb-0.5">Terminal / Gate</div>
                           <div className="avi-value text-sm">
@@ -659,12 +667,22 @@ export default function Home() {
             </div>
 
             {/* Footer */}
-            <div className="flex items-center justify-center gap-2 py-2">
-              <RefreshCw className="w-3 h-3 text-muted-foreground/40" />
-              <span className="text-xs text-muted-foreground/40">
-                Auto-refreshing every 30 seconds · Last updated{" "}
-                {lastRefresh?.toLocaleTimeString() ?? "—"}
-              </span>
+            <div className="flex flex-wrap items-center justify-center gap-4 py-2">
+              <div className="flex items-center gap-2">
+                <RefreshCw className="w-3 h-3 text-muted-foreground/40" />
+                <span className="text-xs text-muted-foreground/40">
+                  Auto-refreshing every 15 minutes · Last updated{" "}
+                  {lastRefresh?.toLocaleTimeString() ?? "—"}
+                </span>
+              </div>
+              {flight?.utc && (
+                <div className="flex items-center gap-1.5">
+                  <Clock className="w-3 h-3 text-muted-foreground/40" />
+                  <span className="text-xs text-muted-foreground/40">
+                    AirLabs UTC: <span className="font-mono">{flight.utc}</span>
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         )}
