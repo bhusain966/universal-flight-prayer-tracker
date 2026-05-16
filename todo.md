@@ -130,10 +130,10 @@
 - [x] All 61 tests passing
 
 ## Updates (Round 16 — Full History Page & README Update)
-- [ ] Add getFlightHistoryPaginated DB helper (sort by date/route/prayerCount, pagination)
-- [ ] Add flight.historyList tRPC procedure with sort, order, page, pageSize inputs
-- [ ] Build /history page: paginated table with sortable columns (date, route, prayers, delay, distance, duration)
-- [ ] Add navigation link to /history in the app header
-- [ ] Register /history route in App.tsx
-- [ ] Update README.md with all features added since Round 11 (timezone fix, local-at-aircraft, arrival detection, API quota, flight history, prayer summary, exact timezone API)
-- [ ] Push updated README and all code to GitHub
+- [x] Add getFlightHistoryPaginated DB helper (sort by date/route/prayerCount, pagination)
+- [x] Add flight.historyList tRPC procedure with sort, order, page, pageSize inputs
+- [x] Build /history page: paginated table with sortable columns (date, route, prayers, delay, distance, duration)
+- [x] Add navigation link to /history in the app header
+- [x] Register /history route in App.tsx
+- [x] Update README.md with all features (timezone fix, local-at-aircraft, arrival detection, API quota, flight history, prayer summary, exact timezone API, /history page)
+- [x] Push updated README and all code to GitHub (commit ed71ff9)

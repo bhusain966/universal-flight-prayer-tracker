@@ -160,7 +160,7 @@ export default function History() {
   const [sortBy, setSortBy] = useState<SortField>("trackedAt");
   const [order, setOrder] = useState<SortOrder>("desc");
 
-  const { data, isLoading } = trpc.flight.historyList.useQuery(
+  const { data, isLoading, error, refetch } = trpc.flight.historyList.useQuery(
     { page, pageSize, sortBy, order },
     { staleTime: 30_000 }
   );
@@ -263,6 +263,19 @@ export default function History() {
                         ))}
                       </TableRow>
                     ))
+                  : error
+                  ? (
+                      <TableRow>
+                        <TableCell colSpan={12} className="text-center py-16 text-muted-foreground">
+                          <div className="flex flex-col items-center gap-3">
+                            <span className="text-red-400 text-sm">Failed to load flight history.</span>
+                            <Button variant="outline" size="sm" onClick={() => refetch()}>
+                              Retry
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )
                   : data?.rows.length === 0
                   ? (
                       <TableRow>
