@@ -14,6 +14,7 @@ type PrayerMethod = "MWL" | "ISNA" | "Egypt" | "Makkah" | "Karachi";
 interface PrayerPanelProps {
   lat?: number;
   lng?: number;
+  positionIsEstimated?: boolean;
 }
 
 const PRAYER_METHODS: { value: PrayerMethod; label: string; description: string }[] = [
@@ -77,7 +78,7 @@ function formatTime(utcIso: string): string {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" }) + " UTC";
 }
 
-export default function PrayerPanel({ lat, lng }: PrayerPanelProps) {
+export default function PrayerPanel({ lat, lng, positionIsEstimated }: PrayerPanelProps) {
   const [method, setMethod] = useState<PrayerMethod>(loadSavedMethod);
   const [countdown, setCountdown] = useState<number | null>(null);
 
@@ -239,7 +240,13 @@ export default function PrayerPanel({ lat, lng }: PrayerPanelProps) {
       </div>
 
       {/* Footer: coordinates + method */}
-      <div className="px-4 py-2 border-t border-border/50">
+      <div className="px-4 py-2 border-t border-border/50 space-y-1">
+        {positionIsEstimated && (
+          <p className="text-xs text-amber-400/80 flex items-center gap-1">
+            <span>⚠</span>
+            <span>Position estimated from route progress (no live ADS-B)</span>
+          </p>
+        )}
         <p className="text-xs text-muted-foreground">
           Calculated for {lat?.toFixed(4)}°, {lng?.toFixed(4)}° · {selectedMethodInfo.label}
         </p>

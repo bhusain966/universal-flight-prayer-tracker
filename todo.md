@@ -67,3 +67,9 @@
 - [x] Persist selected method in localStorage so it survives page refresh
 - [x] Pass selected method to the prayerTimes tRPC query
 - [x] Add vitest tests for each calculation method (6 new tests, 54 total passing)
+
+## Updates (Round 10)
+- [x] Diagnose why live telemetry is not showing: ADS-B not broadcasting + /flight returns single object not array
+- [x] Add estimated position fallback: great-circle interpolation using route % progress when no live ADS-B
+- [x] Prayer times and weather now activate using estimated position when live GPS unavailable
+- [x] Show estimated position badge in telemetry and prayer panels (54 tests passing)

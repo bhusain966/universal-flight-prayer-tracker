@@ -337,7 +337,9 @@ export default function Home() {
   const arrAirport = data?.data?.arrAirport;
   const fr24 = data?.fr24;
   const weather = data?.weather ?? null;
-  const hasLiveTelemetry = flight?.lat != null && flight?.lng != null;
+  const positionIsEstimated = data?.positionIsEstimated ?? false;
+  // hasLiveTelemetry is true only when we have real ADS-B data (not estimated)
+  const hasLiveTelemetry = flight?.lat != null && flight?.lng != null && !positionIsEstimated;
   const depDelay = flight?.dep_delay;
   const arrDelay = flight?.arr_delay;
 
@@ -411,12 +413,16 @@ export default function Home() {
                 onRefresh={() => refetch()}
               />
             )}
-            {hasLiveTelemetry && (
+            {hasLiveTelemetry ? (
               <div className="flex items-center gap-1.5">
                 <div className="pulse-dot" />
                 <span className="text-xs text-muted-foreground hidden sm:inline">Live</span>
               </div>
-            )}
+            ) : positionIsEstimated ? (
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-amber-400/80">⚠ Est. Position</span>
+              </div>
+            ) : null}
           </div>
         </div>
       </header>
@@ -609,6 +615,10 @@ export default function Home() {
                       <div className="pulse-dot" />
                       <span className="text-xs text-muted-foreground">Live</span>
                     </div>
+                  ) : positionIsEstimated ? (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs text-amber-400/80">⚠ Estimated</span>
+                    </div>
                   ) : (
                     <span className="text-xs text-muted-foreground">No live position</span>
                   )
@@ -637,7 +647,9 @@ export default function Home() {
                 badge={fr24?.source ? `SRC: ${fr24.source}` : undefined}
                 extra={
                   !hasLiveTelemetry && (
-                    <span className="text-xs text-muted-foreground italic">Not airborne / no live data</span>
+                    <span className="text-xs text-muted-foreground italic">
+                      {positionIsEstimated ? "⚠ Estimated position (route progress)" : "Not airborne / no live data"}
+                    </span>
                   )
                 }
               />
@@ -819,7 +831,7 @@ export default function Home() {
               {/* Prayer times */}
               <div className="avi-panel">
                 <PanelHeader icon={<MoonIcon className="w-3.5 h-3.5" />} title="Prayer Times" />
-                <PrayerPanel lat={flight?.lat} lng={flight?.lng} />
+                <PrayerPanel lat={flight?.lat} lng={flight?.lng} positionIsEstimated={positionIsEstimated} />
               </div>
             </div>
 

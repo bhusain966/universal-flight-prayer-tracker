@@ -7,6 +7,53 @@ import { getPrayerTimesResult } from "../prayer";
 import { fetchWeatherAtPosition } from "../weather";
 
 /**
+ * Interpolate a position along the great-circle arc between two points.
+ * fraction = 0 → departure, fraction = 1 → arrival.
+ * Uses spherical linear interpolation (slerp) on the unit sphere.
+ */
+function interpolateGreatCircle(
+  depLat: number, depLng: number,
+  arrLat: number, arrLng: number,
+  fraction: number,
+): { lat: number; lng: number } {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const toDeg = (r: number) => (r * 180) / Math.PI;
+
+  const lat1 = toRad(depLat), lng1 = toRad(depLng);
+  const lat2 = toRad(arrLat), lng2 = toRad(arrLng);
+
+  // Convert to Cartesian unit vectors
+  const x1 = Math.cos(lat1) * Math.cos(lng1);
+  const y1 = Math.cos(lat1) * Math.sin(lng1);
+  const z1 = Math.sin(lat1);
+  const x2 = Math.cos(lat2) * Math.cos(lng2);
+  const y2 = Math.cos(lat2) * Math.sin(lng2);
+  const z2 = Math.sin(lat2);
+
+  // Angle between the two vectors
+  const dot = Math.min(1, Math.max(-1, x1 * x2 + y1 * y2 + z1 * z2));
+  const omega = Math.acos(dot);
+
+  let xi: number, yi: number, zi: number;
+  if (Math.abs(omega) < 1e-10) {
+    // Points are coincident
+    xi = x1; yi = y1; zi = z1;
+  } else {
+    const sinOmega = Math.sin(omega);
+    const a = Math.sin((1 - fraction) * omega) / sinOmega;
+    const b = Math.sin(fraction * omega) / sinOmega;
+    xi = a * x1 + b * x2;
+    yi = a * y1 + b * y2;
+    zi = a * z1 + b * z2;
+  }
+
+  return {
+    lat: Math.round(toDeg(Math.asin(zi)) * 10000) / 10000,
+    lng: Math.round(toDeg(Math.atan2(yi, xi)) * 10000) / 10000,
+  };
+}
+
+/**
  * AirLabs returns datetimes as 'YYYY-MM-DD HH:MM' (UTC, space-separated).
  * Normalise to ISO 8601 'YYYY-MM-DDTHH:MMZ' so new Date() always works on any client.
  */
@@ -41,14 +88,43 @@ export const flightRouter = router({
         const data = airlabsData.value;
         const fr24 = fr24Data.status === "fulfilled" ? fr24Data.value : null;
 
-        // Fetch weather only if we have a live position
         const flight = data?.flight;
+        const depAirport = data?.depAirport;
+        const arrAirport = data?.arrAirport;
+
+        // Determine best available position:
+        // 1. Live ADS-B from /flights (most accurate)
+        // 2. Estimated position via great-circle interpolation using route % progress
+        let effectiveLat = flight?.lat;
+        let effectiveLng = flight?.lng;
+        let positionIsEstimated = false;
+
+        if (
+          (effectiveLat == null || effectiveLng == null) &&
+          depAirport?.lat != null && depAirport?.lng != null &&
+          arrAirport?.lat != null && arrAirport?.lng != null &&
+          flight?.percent != null && flight.percent > 0 && flight.percent < 100
+        ) {
+          const est = interpolateGreatCircle(
+            depAirport.lat!, depAirport.lng!,
+            arrAirport.lat!, arrAirport.lng!,
+            flight.percent / 100,
+          );
+          effectiveLat = est.lat;
+          effectiveLng = est.lng;
+          positionIsEstimated = true;
+          // Inject estimated position into flight object so frontend can use it
+          flight.lat = est.lat;
+          flight.lng = est.lng;
+        }
+
+        // Fetch weather using best available position (live or estimated)
         const weather =
-          flight?.lat != null && flight?.lng != null
+          effectiveLat != null && effectiveLng != null
             ? await fetchWeatherAtPosition(
-                flight.lat,
-                flight.lng,
-                flight.alt ?? 35000,
+                effectiveLat,
+                effectiveLng,
+                flight?.alt ?? 35000,
               ).catch(() => null)
             : null;
 
@@ -68,6 +144,7 @@ export const flightRouter = router({
           success: true as const,
           data,
           weather,
+          positionIsEstimated,
           fr24: fr24
             ? {
                 callsign: fr24.live?.callsign,
