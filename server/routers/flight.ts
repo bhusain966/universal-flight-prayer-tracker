@@ -7,7 +7,10 @@ import { getPrayerTimesResult, calculatePrayerTimes } from "../prayer";
 import { fetchWeatherAtPosition } from "../weather";
 import { saveFlightHistory, getRecentFlights, getFlightHistoryByIata, getFlightHistoryPaginated, addUpcomingTrip, getUpcomingTrips, deleteUpcomingTrip } from "../db";
 import { makeRequest } from "../_core/map";
-import { getAirportByIata } from "airport-data-js";
+// airport-data-js is a CommonJS module — must use default import to avoid
+// "Named export 'getAirportByIata' not found" crash in the ESM production bundle.
+import airportDataJs from "airport-data-js";
+const getAirportByIata = airportDataJs.getAirportByIata as (iata: string) => Promise<Array<{ iata: string; latitude: string | number; longitude: string | number }> | null>;
 
 /**
  * Interpolate a position along the great-circle arc between two points.

@@ -12,24 +12,28 @@ vi.mock("./fr24", () => ({
   fetchFr24FlightData: vi.fn(),
   fetchFr24FlightByIata: vi.fn(),
 }));
-// Mock airport-data-js — no file I/O in tests
+// airport-data-js is CJS — mock the default export object so the
+// `const getAirportByIata = airportDataJs.getAirportByIata` binding in
+// flight.ts resolves correctly in both dev and production builds.
 vi.mock("airport-data-js", () => ({
-  getAirportByIata: vi.fn().mockImplementation((iata: string) => {
-    const coords: Record<string, { latitude: number; longitude: number }> = {
-      ORD: { latitude: 41.9742, longitude: -87.9073 },
-      DOH: { latitude: 25.2731, longitude: 51.6081 },
-    };
-    const c = coords[iata];
-    return Promise.resolve(c ? [{ iata, ...c }] : []);
-  }),
+  default: {
+    getAirportByIata: vi.fn().mockImplementation((iata: string) => {
+      const coords: Record<string, { latitude: number; longitude: number }> = {
+        ORD: { latitude: 41.9742, longitude: -87.9073 },
+        DOH: { latitude: 25.2731, longitude: 51.6081 },
+      };
+      const c = coords[iata];
+      return Promise.resolve(c ? [{ iata, ...c }] : []);
+    }),
+  },
 }));
 import { fetchFlightData } from "./airlabs";
 import { fetchFr24FlightData, fetchFr24FlightByIata } from "./fr24";
-import { getAirportByIata } from "airport-data-js";
+import airportDataJs from "airport-data-js";
 const mockFetchFlightData = vi.mocked(fetchFlightData);
 const mockFetchFr24 = vi.mocked(fetchFr24FlightData);
 const mockFetchFr24ByIata = vi.mocked(fetchFr24FlightByIata);
-const mockGetAirportByIata = vi.mocked(getAirportByIata);
+const mockGetAirportByIata = vi.mocked(airportDataJs.getAirportByIata);
 
 /** Re-apply airport coords mock after vi.clearAllMocks() resets implementations */
 function resetAirportMock() {
