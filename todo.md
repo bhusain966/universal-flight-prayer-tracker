@@ -178,3 +178,8 @@
 - [x] Fix FR24 date filter: fr24Lookup and fetchFr24FlightByIata now prefer today's UTC date when multiple results exist
 - [x] Wire FR24 live position into main tracking view: new fr24FullTracking procedure returns live ADS-B + weather + prayer times; full tracking view rendered in FR24 mode
 - [x] FR24 fallback shows full flight card: identity bar, time strip, map, telemetry, weather, prayer panel, operations panel
+
+## Round 22 — FR24 live position fix
+- [x] Fix fr24FullTracking: IATA lookup returned no live results because FR24 live endpoint needs ICAO callsign
+- [x] Added deriveCallsignCandidates() with 80+ IATA→ICAO mappings; retries live lookup by callsign (e.g. QTR1188) when IATA fails
+- [x] positionIsEstimated is now false when FR24 returns real ADS-B coordinates via callsign lookup

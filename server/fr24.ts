@@ -157,10 +157,9 @@ export async function fetchFr24FlightByIata(
 export async function fetchFr24FlightData(flightIata: string): Promise<Fr24CombinedData | null> {
   let live: Fr24LivePosition | undefined;
   let fr24Id: string | undefined;
-
   let fr24Quota: Fr24Quota | undefined;
 
-  // Step 1: Get live position
+  // Step 1a: Try live position by IATA flight number
   try {
     const { data: liveRes, quota } = await fr24Get<{ data: Fr24LivePosition[] }>(
       "/live/flight-positions/full",
@@ -175,7 +174,32 @@ export async function fetchFr24FlightData(flightIata: string): Promise<Fr24Combi
     // FR24 live data unavailable — non-fatal
   }
 
-  // Step 2: Get flight summary (richer metadata: runway, distance, category, takeoff time)
+  // Step 1b: If IATA lookup returned nothing, try by callsign.
+  // The FR24 live endpoint uses ICAO callsigns (e.g. QTR1188) not IATA (QR1188).
+  // Derive the likely callsign by replacing the 2-letter IATA airline prefix with
+  // the 3-letter ICAO prefix. We attempt common mappings and also try the raw IATA
+  // number as-is (some carriers use the same code for both).
+  if (!live) {
+    const callsignCandidates = deriveCallsignCandidates(flightIata);
+    for (const callsign of callsignCandidates) {
+      try {
+        const { data: liveRes, quota } = await fr24Get<{ data: Fr24LivePosition[] }>(
+          "/live/flight-positions/full",
+          { callsigns: callsign }
+        );
+        if (quota) fr24Quota = { ...fr24Quota, ...quota };
+        if (liveRes.data && liveRes.data.length > 0) {
+          live = liveRes.data[0];
+          fr24Id = live.fr24_id;
+          break;
+        }
+      } catch {
+        // try next candidate
+      }
+    }
+  }
+
+  // Step 2: Get flight summary using fr24_id (richer metadata: runway, distance, category, takeoff time)
   let summary: Fr24FlightSummary | undefined;
   if (fr24Id) {
     try {
@@ -183,7 +207,6 @@ export async function fetchFr24FlightData(flightIata: string): Promise<Fr24Combi
         "/flight-summary/full",
         { flight_ids: fr24Id }
       );
-      // Prefer quota from summary call (more credits consumed = more accurate)
       if (quota) fr24Quota = { ...fr24Quota, ...quota };
       if (summaryRes.data && summaryRes.data.length > 0) {
         summary = summaryRes.data[0];
@@ -195,4 +218,46 @@ export async function fetchFr24FlightData(flightIata: string): Promise<Fr24Combi
 
   if (!live && !summary) return null;
   return { live, summary, quota: fr24Quota };
+}
+
+/**
+ * Derive likely ICAO callsign candidates from an IATA flight number.
+ * E.g. "QR1188" → ["QTR1188", "QR1188"]
+ * The IATA→ICAO mapping covers the most common airlines tracked.
+ */
+function deriveCallsignCandidates(flightIata: string): string[] {
+  // Common IATA (2-letter) → ICAO (3-letter) airline prefix mappings
+  const IATA_TO_ICAO: Record<string, string> = {
+    QR: 'QTR', EK: 'UAE', EY: 'ETD', SQ: 'SIA', BA: 'BAW',
+    AA: 'AAL', UA: 'UAL', DL: 'DAL', LH: 'DLH', AF: 'AFR',
+    KL: 'KLM', TK: 'THY', MH: 'MAS', AI: 'AIC', CX: 'CPA',
+    JL: 'JAL', NH: 'ANA', OZ: 'AAR', KE: 'KAL', CI: 'CAL',
+    MS: 'MSR', RJ: 'RJA', PK: 'PIA', WY: 'OMA', GF: 'GFA',
+    ET: 'ETH', SA: 'SAA', KQ: 'KQA', SV: 'SVA', IR: 'IRA',
+    FZ: 'FDB', WB: 'RBA', G9: 'ABY', XY: 'NAS', PC: 'PGT',
+    FR: 'RYR', U2: 'EZY', W6: 'WZZ', VY: 'VLG', IB: 'IBE',
+    AZ: 'AZA', SK: 'SAS', AY: 'FIN', LX: 'SWR', OS: 'AUA',
+    AC: 'ACA', WS: 'WJA', TS: 'TSC', B6: 'JBU', WN: 'SWA',
+    AS: 'ASA', F9: 'FFT', NK: 'NKS', G4: 'AAY', SY: 'SCX',
+    CZ: 'CSN', MU: 'CES', CA: 'CCA', HU: 'CHH', '3U': 'CSC',
+    MF: 'CXA', ZH: 'CSZ', SC: 'CDG', FM: 'CSH', KN: 'CUA',
+    BI: 'RBA', MI: 'SLK', TR: 'TGW', IT: 'TAO', Z2: 'PAL',
+    PR: 'PAL', GA: 'GIA', JQ: 'JST', VA: 'VOZ', QF: 'QFA',
+    NZ: 'ANZ', TG: 'THA', VN: 'HVN', OD: 'MXD', MK: 'MAU',
+    AT: 'RAM', CM: 'CMP', AV: 'AVA', LA: 'LAN', JJ: 'TAM',
+    G3: 'GLO', AD: 'AZU', O6: 'ONE',
+  };
+
+  // Extract the 2-letter IATA prefix and numeric suffix
+  const match = flightIata.match(/^([A-Z0-9]{2})([0-9]{1,4}[A-Z]?)$/);
+  if (!match) return [flightIata];
+
+  const [, iataPrefix, suffix] = match;
+  const icaoPrefix = IATA_TO_ICAO[iataPrefix];
+
+  const candidates: string[] = [];
+  if (icaoPrefix) candidates.push(`${icaoPrefix}${suffix}`);
+  // Also try the raw IATA number (some carriers use same code)
+  candidates.push(flightIata);
+  return candidates;
 }
