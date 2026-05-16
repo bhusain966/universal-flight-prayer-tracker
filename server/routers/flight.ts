@@ -5,7 +5,7 @@ import { fetchFlightData } from "../airlabs";
 import { fetchFr24FlightData } from "../fr24";
 import { getPrayerTimesResult, calculatePrayerTimes } from "../prayer";
 import { fetchWeatherAtPosition } from "../weather";
-import { saveFlightHistory, getRecentFlights, getFlightHistoryByIata, getFlightHistoryPaginated } from "../db";
+import { saveFlightHistory, getRecentFlights, getFlightHistoryByIata, getFlightHistoryPaginated, addUpcomingTrip, getUpcomingTrips, deleteUpcomingTrip } from "../db";
 import { makeRequest } from "../_core/map";
 
 /**
@@ -197,6 +197,12 @@ export const flightRouter = router({
         };
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "Failed to fetch flight data";
+        if (message.startsWith('AIRLABS_QUOTA_EXCEEDED')) {
+          throw new TRPCError({
+            code: "TOO_MANY_REQUESTS",
+            message: 'AirLabs API monthly quota has been exceeded. Quota resets on the 1st of next month. You can still add this flight to Upcoming Trips and tracking will resume when the quota resets.',
+          });
+        }
         throw new TRPCError({
           code: "NOT_FOUND",
           message,
@@ -385,6 +391,58 @@ export const flightRouter = router({
         input.order,
       );
       return { rows, total, page: input.page, pageSize: input.pageSize };
+    }),
+
+  /**
+   * Add a new upcoming trip.
+   */
+  addTrip: publicProcedure
+    .input(
+      z.object({
+        flightIata:        z.string().min(2).max(16),
+        airlineName:       z.string().optional(),
+        depIata:           z.string().optional(),
+        depCity:           z.string().optional(),
+        arrIata:           z.string().optional(),
+        arrCity:           z.string().optional(),
+        scheduledDepUtc:   z.string(),   // ISO UTC string
+        scheduledDepLocal: z.string().optional(),
+        scheduledArrLocal: z.string().optional(),
+        notes:             z.string().optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const id = await addUpcomingTrip({
+        flightIata:        input.flightIata.toUpperCase().trim(),
+        airlineName:       input.airlineName ?? null,
+        depIata:           input.depIata ?? null,
+        depCity:           input.depCity ?? null,
+        arrIata:           input.arrIata ?? null,
+        arrCity:           input.arrCity ?? null,
+        scheduledDepUtc:   input.scheduledDepUtc,
+        scheduledDepLocal: input.scheduledDepLocal ?? null,
+        scheduledArrLocal: input.scheduledArrLocal ?? null,
+        notes:             input.notes ?? null,
+      });
+      return { id };
+    }),
+
+  /**
+   * List all upcoming trips ordered by scheduled departure.
+   */
+  listTrips: publicProcedure
+    .query(async () => {
+      return await getUpcomingTrips();
+    }),
+
+  /**
+   * Delete an upcoming trip by id.
+   */
+  deleteTrip: publicProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ input }) => {
+      await deleteUpcomingTrip(input.id);
+      return { success: true };
     }),
 
   /**

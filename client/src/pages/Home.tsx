@@ -20,6 +20,10 @@ import {
   Wind,
   Thermometer,
   Share2,
+  Calendar,
+  Plus,
+  Trash2,
+  X,
 } from "lucide-react";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -413,6 +417,40 @@ export default function Home() {
   // Store the prayer summary after the history record is saved (for Share Arrival)
   const [lastSavedPrayers, setLastSavedPrayers] = useState<{ count: number; names: string }>({ count: 0, names: "" });
 
+  // Upcoming Trips
+  const [showAddTrip, setShowAddTrip] = useState(false);
+  const [tripForm, setTripForm] = useState({ flightIata: "", scheduledDepUtc: "", notes: "" });
+  const { data: upcomingTrips, refetch: refetchTrips } = trpc.flight.listTrips.useQuery();
+  const addTripMutation = trpc.flight.addTrip.useMutation({
+    onSuccess: () => { refetchTrips(); setShowAddTrip(false); setTripForm({ flightIata: "", scheduledDepUtc: "", notes: "" }); toast.success("Trip added to Upcoming Trips"); },
+    onError: (e) => toast.error(e.message),
+  });
+  const deleteTripMutation = trpc.flight.deleteTrip.useMutation({
+    onSuccess: () => { refetchTrips(); toast.success("Trip removed"); },
+  });
+
+  // Auto-activate tracking when a trip's departure time arrives
+  useEffect(() => {
+    if (!upcomingTrips || upcomingTrips.length === 0) return;
+    const interval = setInterval(() => {
+      const now = Date.now();
+      for (const trip of upcomingTrips) {
+        const dep = new Date(trip.scheduledDepUtc).getTime();
+        // Activate tracking 5 minutes before departure up to 2 hours after
+        if (dep - now <= 5 * 60 * 1000 && now - dep <= 2 * 60 * 60 * 1000) {
+          if (flightIata !== trip.flightIata) {
+            setFlightIata(trip.flightIata);
+            setInputValue(trip.flightIata);
+            navigate(`/track/${trip.flightIata}`);
+            toast.success(`Auto-activating tracking for ${trip.flightIata}`);
+          }
+          break;
+        }
+      }
+    }, 30_000); // check every 30 seconds
+    return () => clearInterval(interval);
+  }, [upcomingTrips, flightIata, navigate]);
+
   const { data, isLoading, error, refetch, isFetching } =
     trpc.flight.lookup.useQuery(
       { flightIata: flightIata ?? "" },
@@ -767,6 +805,163 @@ export default function Home() {
           </div>
         )}
 
+        {/* ── Upcoming Trips Panel (always shown on empty state) ── */}
+        {!flightIata && (
+          <div className="avi-panel">
+            <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/40">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-3.5 h-3.5 text-primary" />
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Upcoming Trips</span>
+              </div>
+              <button
+                onClick={() => { setTripForm(f => ({ ...f, flightIata: inputValue })); setShowAddTrip(true); }}
+                className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md border border-primary/30 text-primary hover:bg-primary/10 transition-colors"
+              >
+                <Plus className="w-3 h-3" />
+                Add Trip
+              </button>
+            </div>
+            {upcomingTrips && upcomingTrips.length > 0 ? (
+              <div className="divide-y divide-border/30">
+                {upcomingTrips.map((trip) => {
+                  const dep = new Date(trip.scheduledDepUtc);
+                  const now = Date.now();
+                  const msUntil = dep.getTime() - now;
+                  const isPast = msUntil < 0;
+                  const daysUntil = Math.floor(Math.abs(msUntil) / (1000 * 60 * 60 * 24));
+                  const hoursUntil = Math.floor((Math.abs(msUntil) % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                  const minsUntil = Math.floor((Math.abs(msUntil) % (1000 * 60 * 60)) / (1000 * 60));
+                  const countdownLabel = isPast
+                    ? `Departed ${daysUntil > 0 ? `${daysUntil}d ` : ''}${hoursUntil}h ${minsUntil}m ago`
+                    : daysUntil > 0
+                    ? `in ${daysUntil}d ${hoursUntil}h`
+                    : hoursUntil > 0
+                    ? `in ${hoursUntil}h ${minsUntil}m`
+                    : `in ${minsUntil}m`;
+                  const isImminent = !isPast && msUntil <= 5 * 60 * 1000;
+                  return (
+                    <div key={trip.id} className="flex items-center gap-3 px-4 py-3 hover:bg-card/40 transition-colors">
+                      <div
+                        className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                        style={{
+                          background: isImminent ? 'oklch(0.55 0.18 145 / 0.15)' : 'oklch(0.72 0.18 55 / 0.08)',
+                          border: `1px solid ${isImminent ? 'oklch(0.55 0.18 145 / 0.4)' : 'oklch(0.72 0.18 55 / 0.2)'}`,
+                        }}
+                      >
+                        <Plane className="w-4 h-4" style={{ color: isImminent ? 'oklch(0.75 0.18 145)' : 'oklch(0.72 0.18 55)' }} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-mono font-bold text-sm text-foreground">{trip.flightIata}</span>
+                          {trip.depIata && trip.arrIata && (
+                            <span className="text-xs text-muted-foreground font-mono">{trip.depIata} → {trip.arrIata}</span>
+                          )}
+                          {isImminent && (
+                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: 'oklch(0.55 0.18 145 / 0.2)', color: 'oklch(0.75 0.18 145)' }}>IMMINENT</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3 mt-0.5">
+                          <span className="text-xs text-muted-foreground">
+                            {trip.scheduledDepLocal
+                              ? trip.scheduledDepLocal.replace('T', ' ').slice(0, 16)
+                              : dep.toISOString().replace('T', ' ').slice(0, 16) + ' UTC'}
+                          </span>
+                          <span className={`text-xs font-semibold ${isPast ? 'text-muted-foreground' : isImminent ? 'text-green-400' : 'text-primary'}`}>
+                            {countdownLabel}
+                          </span>
+                        </div>
+                        {trip.notes && <p className="text-xs text-muted-foreground/60 mt-0.5 truncate">{trip.notes}</p>}
+                      </div>
+                      <button
+                        onClick={() => { setFlightIata(trip.flightIata); setInputValue(trip.flightIata); navigate(`/track/${trip.flightIata}`); }}
+                        className="text-xs px-2.5 py-1 rounded-md border border-primary/30 text-primary hover:bg-primary/10 transition-colors shrink-0"
+                      >
+                        Track
+                      </button>
+                      <button
+                        onClick={() => deleteTripMutation.mutate({ id: trip.id })}
+                        className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors shrink-0"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-8 gap-2 text-muted-foreground">
+                <Calendar className="w-8 h-8 opacity-30" />
+                <p className="text-sm">No upcoming trips yet.</p>
+                <p className="text-xs opacity-60">Add a future flight to get a countdown and auto-tracking.</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Add Trip Modal ── */}
+        {showAddTrip && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'oklch(0 0 0 / 0.7)' }}>
+            <div className="avi-panel w-full max-w-md">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-border/40">
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-primary" />
+                  <span className="font-semibold text-sm">Add Upcoming Trip</span>
+                </div>
+                <button onClick={() => setShowAddTrip(false)} className="p-1 rounded-md hover:bg-card/60 text-muted-foreground">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="p-4 space-y-4">
+                <div>
+                  <label className="text-xs text-muted-foreground uppercase tracking-wider mb-1.5 block">Flight Number *</label>
+                  <input
+                    value={tripForm.flightIata}
+                    onChange={e => setTripForm(f => ({ ...f, flightIata: e.target.value.toUpperCase() }))}
+                    placeholder="e.g. QR726"
+                    className="w-full px-3 py-2 rounded-md bg-card border border-border text-sm font-mono text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground uppercase tracking-wider mb-1.5 block">Scheduled Departure (UTC) *</label>
+                  <input
+                    type="datetime-local"
+                    value={tripForm.scheduledDepUtc}
+                    onChange={e => setTripForm(f => ({ ...f, scheduledDepUtc: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-md bg-card border border-border text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                  <p className="text-[10px] text-muted-foreground/60 mt-1">Enter the departure time in UTC. Tracking activates 5 min before departure.</p>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground uppercase tracking-wider mb-1.5 block">Notes (optional)</label>
+                  <input
+                    value={tripForm.notes}
+                    onChange={e => setTripForm(f => ({ ...f, notes: e.target.value }))}
+                    placeholder="e.g. Business trip to Doha"
+                    className="w-full px-3 py-2 rounded-md bg-card border border-border text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+                <div className="flex gap-2 justify-end pt-1">
+                  <button onClick={() => setShowAddTrip(false)} className="px-3 py-1.5 text-sm rounded-md border border-border text-muted-foreground hover:bg-card/60 transition-colors">Cancel</button>
+                  <button
+                    disabled={!tripForm.flightIata.trim() || !tripForm.scheduledDepUtc || addTripMutation.isPending}
+                    onClick={() => {
+                      if (!tripForm.flightIata.trim() || !tripForm.scheduledDepUtc) return;
+                      addTripMutation.mutate({
+                        flightIata: tripForm.flightIata.trim(),
+                        scheduledDepUtc: new Date(tripForm.scheduledDepUtc + ':00Z').toISOString(),
+                        notes: tripForm.notes || undefined,
+                      });
+                    }}
+                    className="px-4 py-1.5 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                  >
+                    {addTripMutation.isPending ? 'Saving…' : 'Add Trip'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* ── Flight History Table (shown on empty state when history exists) ── */}
         {!flightIata && recentFlights && recentFlights.length > 0 && (
           <div className="avi-panel">
@@ -882,23 +1077,40 @@ export default function Home() {
         )}
 
         {/* ── Error ── */}
-        {flightIata && error && !isLoading && (
-          <div className="flex flex-col items-center justify-center min-h-[40vh] gap-4">
-            <div className="w-14 h-14 rounded-xl flex items-center justify-center bg-destructive/10 border border-destructive/30">
-              <AlertTriangle className="w-7 h-7 text-destructive" />
+        {flightIata && error && !isLoading && (() => {
+          const isQuotaError = error.data?.code === 'TOO_MANY_REQUESTS';
+          return (
+            <div className="flex flex-col items-center justify-center min-h-[40vh] gap-4">
+              <div className={`w-14 h-14 rounded-xl flex items-center justify-center ${isQuotaError ? 'bg-amber-500/10 border border-amber-500/30' : 'bg-destructive/10 border border-destructive/30'}`}>
+                <AlertTriangle className={`w-7 h-7 ${isQuotaError ? 'text-amber-400' : 'text-destructive'}`} />
+              </div>
+              <div className="text-center space-y-1 max-w-md">
+                <h3 className="font-semibold text-foreground">
+                  {isQuotaError ? 'API Quota Exceeded' : 'Flight Not Found'}
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  {isQuotaError
+                    ? 'The AirLabs API monthly quota has been exhausted. Quota resets on the 1st of next month. You can add this flight to Upcoming Trips below — tracking will activate automatically when the quota resets and the departure time arrives.'
+                    : (error.message || `No data found for ${flightIata}. The flight may not be active or the number may be incorrect.`)}
+                </p>
+              </div>
+              <div className="flex gap-3 flex-wrap justify-center">
+                <button onClick={() => { setFlightIata(null); setInputValue(""); inputRef.current?.focus(); }}
+                  className="text-sm text-primary hover:underline">
+                  Try another flight
+                </button>
+                {isQuotaError && (
+                  <button
+                    onClick={() => setShowAddTrip(true)}
+                    className="text-sm px-3 py-1.5 rounded-md border border-amber-500/40 text-amber-400 hover:bg-amber-500/10 transition-colors"
+                  >
+                    + Add to Upcoming Trips
+                  </button>
+                )}
+              </div>
             </div>
-            <div className="text-center space-y-1 max-w-sm">
-              <h3 className="font-semibold text-foreground">Flight Not Found</h3>
-              <p className="text-sm text-muted-foreground">
-                {error.message || `No data found for ${flightIata}. The flight may not be active or the number may be incorrect.`}
-              </p>
-            </div>
-            <button onClick={() => { setFlightIata(null); setInputValue(""); inputRef.current?.focus(); }}
-              className="text-sm text-primary hover:underline">
-              Try another flight
-            </button>
-          </div>
-        )}
+          );
+        })()}
 
         {/* ── Flight data ── */}
         {flightIata && data && !isLoading && (

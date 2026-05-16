@@ -157,7 +157,12 @@ async function airlabsGetRaw<T>(
     timeout: 15000,
   });
   if (response.data.error) {
-    throw new Error(response.data.error.message);
+    const code: string = (response.data.error as { code?: string }).code ?? '';
+    const msg: string = response.data.error.message ?? 'AirLabs API error';
+    if (code === 'month_limit_exceeded' || code === 'day_limit_exceeded' || code === 'hour_limit_exceeded' || code === 'minute_limit_exceeded') {
+      throw new Error(`AIRLABS_QUOTA_EXCEEDED: ${msg}`);
+    }
+    throw new Error(msg);
   }
   const key = response.data.request?.key;
   const quota: AirlabsQuota | undefined = key
@@ -194,7 +199,9 @@ export async function fetchFlightData(flightIata: string): Promise<FlightFullDat
     if (Array.isArray(liveResults) && liveResults.length > 0) {
       liveData = liveResults[0];
     }
-  } catch {
+  } catch (e: unknown) {
+    // Re-throw quota errors immediately — no point trying the schedule endpoint
+    if (e instanceof Error && e.message.startsWith('AIRLABS_QUOTA_EXCEEDED')) throw e;
     // Live data not available, continue to schedule endpoint
   }
 
@@ -215,7 +222,8 @@ export async function fetchFlightData(flightIata: string): Promise<FlightFullDat
       // Normal case: single object
       scheduleData = raw as AirlabsFlightData;
     }
-  } catch {
+  } catch (e: unknown) {
+    if (e instanceof Error && e.message.startsWith('AIRLABS_QUOTA_EXCEEDED')) throw e;
     // Schedule data not available
   }
 

@@ -15,6 +15,13 @@
       "when": 1778925745910,
       "tag": "0001_lucky_william_stryker",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1778937509477,
+      "tag": "0002_empty_tiger_shark",
+      "breakpoints": true
     }
   ]
 }

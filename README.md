@@ -72,6 +72,18 @@ When ADS-B is unavailable, position is estimated via great-circle interpolation.
 - Click any row to re-open that flight in the tracker
 - Recent flights chips (last 10) on the home screen for quick access
 
+
+### Upcoming Trips
+- Add any future flight number with its scheduled UTC departure time and optional notes
+- Live countdown shown for each trip (e.g. "in 2d 4h", "in 35m", "IMMINENT")
+- Flight tracking auto-activates 5 minutes before the scheduled departure — no manual action needed
+- Trips are stored in the database; delete them individually once flown
+- From the quota-exceeded error screen, a shortcut button pre-fills the Add Trip form
+
+### API Quota & Error Handling
+- AirLabs monthly quota exhaustion now shows a clear "API Quota Exceeded" banner (amber) instead of a generic "Flight Not Found" error
+- FR24 credit balance and AirLabs call counts are displayed in the app footer after every successful lookup
+
 ### Export & Sharing
 
 - **Export CSV** button on the `/history` page — downloads all currently visible rows as a `.csv` file with 24 columns (date, flight, route, times, delays, duration, distance, aircraft, baggage belt, prayers)

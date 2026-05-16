@@ -1,6 +1,6 @@
 import { asc, desc, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, flightHistory, InsertFlightHistory } from "../drizzle/schema";
+import { InsertUser, users, flightHistory, InsertFlightHistory, upcomingTrips, InsertUpcomingTrip } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -170,6 +170,48 @@ export async function getFlightHistoryCount(): Promise<number> {
 
 export type HistorySortField = "trackedAt" | "depIata" | "arrIata" | "prayerCount" | "arrDelayMin" | "distanceKm" | "actualDurationMin";
 export type SortOrder = "asc" | "desc";
+
+// ─── Upcoming Trips helpers ──────────────────────────────────────────────────
+
+/** Add a new upcoming trip. */
+export async function addUpcomingTrip(record: InsertUpcomingTrip): Promise<number | null> {
+  const db = await getDb();
+  if (!db) return null;
+  try {
+    const result = await db.insert(upcomingTrips).values(record);
+    return (result as unknown as { insertId: number }).insertId ?? null;
+  } catch (error) {
+    console.error("[Database] Failed to add upcoming trip:", error);
+    throw error;
+  }
+}
+
+/** Return all upcoming trips ordered by scheduled departure ascending. */
+export async function getUpcomingTrips() {
+  const db = await getDb();
+  if (!db) return [];
+  try {
+    return await db
+      .select()
+      .from(upcomingTrips)
+      .orderBy(asc(upcomingTrips.scheduledDepUtc));
+  } catch (error) {
+    console.error("[Database] Failed to fetch upcoming trips:", error);
+    return [];
+  }
+}
+
+/** Delete an upcoming trip by id. */
+export async function deleteUpcomingTrip(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  try {
+    await db.delete(upcomingTrips).where(eq(upcomingTrips.id, id));
+  } catch (error) {
+    console.error("[Database] Failed to delete upcoming trip:", error);
+    throw error;
+  }
+}
 
 /**
  * Return a paginated, sortable list of flight history records.

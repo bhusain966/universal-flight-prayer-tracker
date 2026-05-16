@@ -86,3 +86,36 @@ export const flightHistory = mysqlTable("flight_history", {
 
 export type FlightHistory = typeof flightHistory.$inferSelect;
 export type InsertFlightHistory = typeof flightHistory.$inferInsert;
+
+/**
+ * Stores upcoming (future) flights the user wants to monitor.
+ * When the scheduled departure time arrives, the frontend auto-activates live tracking.
+ */
+export const upcomingTrips = mysqlTable("upcoming_trips", {
+  id: int("id").autoincrement().primaryKey(),
+
+  // Flight identification
+  flightIata:        varchar("flightIata",        { length: 16 }).notNull(),
+  airlineName:       varchar("airlineName",       { length: 128 }),
+  depIata:           varchar("depIata",           { length: 8 }),
+  depCity:           varchar("depCity",           { length: 64 }),
+  arrIata:           varchar("arrIata",           { length: 8 }),
+  arrCity:           varchar("arrCity",           { length: 64 }),
+
+  // Scheduled departure (UTC ISO string, e.g. "2026-06-01T14:30:00Z")
+  scheduledDepUtc:   varchar("scheduledDepUtc",   { length: 32 }).notNull(),
+  // Scheduled departure local display string (e.g. "2026-06-01T19:30")
+  scheduledDepLocal: varchar("scheduledDepLocal", { length: 32 }),
+  // Scheduled arrival local display string
+  scheduledArrLocal: varchar("scheduledArrLocal", { length: 32 }),
+
+  // Optional user note
+  notes:             text("notes"),
+
+  // Metadata
+  createdAt:         timestamp("createdAt").defaultNow().notNull(),
+  updatedAt:         timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type UpcomingTrip = typeof upcomingTrips.$inferSelect;
+export type InsertUpcomingTrip = typeof upcomingTrips.$inferInsert;

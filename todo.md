@@ -139,7 +139,17 @@
 - [x] Push updated README and all code to GitHub (commit ed71ff9)
 
 ## Updates (Round 17 — Export CSV & Share Buttons)
-- [ ] Add Export CSV button to /history page (downloads all visible rows as CSV)
-- [ ] Add Share button to Arrival Summary card (Web Share API with clipboard fallback)
-- [ ] Update README.md with new features
-- [ ] Push to GitHub
+- [x] Add Export CSV button to /history page (downloads all visible rows as CSV with 24 columns)
+- [x] Add Share Arrival Summary button to Arrival Summary card (Web Share API on mobile, clipboard fallback on desktop)
+- [x] Update README.md with Export & Sharing section
+- [x] Push to GitHub (commit 2884a9a)
+
+## Updates (Round 18 — Flight Not Found Fix & Upcoming Trips)
+- [ ] Diagnose Flight Not Found: check AirLabs live response for QR726 and understand why it fails
+- [ ] Fix error handling: distinguish "flight not in AirLabs window" from "invalid flight number"
+- [ ] Show helpful message when flight exists but is not yet in AirLabs active window (e.g. "Flight departs tomorrow — add to Upcoming Trips")
+- [ ] Create upcoming_trips DB table (flightIata, scheduledDepUtc, depIata, arrIata, notes, userId)
+- [ ] Add tRPC procedures: trips.add, trips.list, trips.delete
+- [ ] Build Upcoming Trips panel on home screen: add trip form, list of upcoming flights with countdown
+- [ ] Auto-activate live tracking when departure time arrives (client-side timer checks every minute)
+- [ ] Update README.md and push to GitHub
