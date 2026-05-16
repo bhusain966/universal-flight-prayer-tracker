@@ -620,6 +620,159 @@ export const flightRouter = router({
     }),
 
   /**
+   * Full FR24 tracking: live position + flight summary + weather + prayer times.
+   * Used as a complete AirLabs replacement when quota is exhausted.
+   * Returns the same shape as the main `lookup` procedure so the frontend
+   * can render the full tracking view without any code changes.
+   */
+  fr24FullTracking: publicProcedure
+    .input(z.object({ flightIata: z.string().min(2).max(8) }))
+    .query(async ({ input }) => {
+      const normalized = input.flightIata.trim().toUpperCase();
+
+      // Fetch live position + summary in parallel with airport coords
+      const fr24 = await fetchFr24FlightData(normalized);
+
+      // If no live data, try the summary-only path (for pre-departure / just-landed)
+      let summaryOnly = false;
+      let summaryResult: Awaited<ReturnType<typeof fetchFr24FlightByIata>> = null;
+      if (!fr24?.live && !fr24?.summary) {
+        summaryResult = await fetchFr24FlightByIata(normalized, 30);
+        summaryOnly = true;
+      }
+
+      const live = fr24?.live;
+      const summary = fr24?.summary ?? summaryResult?.summary;
+
+      if (!live && !summary) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: `Flight ${normalized} not found in FR24. It may not have departed yet.`,
+        });
+      }
+
+      const depIata = live?.orig_iata ?? summary?.orig_iata;
+      const arrIata = live?.dest_iata ?? summary?.dest_iata_actual ?? summary?.dest_iata;
+
+      // Airport coordinates from local dataset
+      let depLat: number | null = null;
+      let depLng: number | null = null;
+      let arrLat: number | null = null;
+      let arrLng: number | null = null;
+      let midLat: number | null = null;
+      let midLng: number | null = null;
+
+      try {
+        if (depIata) {
+          const depApts = await getAirportByIata(depIata);
+          const dep = Array.isArray(depApts) ? depApts[0] : depApts;
+          if (dep?.latitude != null && dep?.longitude != null) {
+            depLat = parseFloat(String(dep.latitude));
+            depLng = parseFloat(String(dep.longitude));
+          }
+        }
+        if (arrIata) {
+          const arrApts = await getAirportByIata(arrIata);
+          const arr = Array.isArray(arrApts) ? arrApts[0] : arrApts;
+          if (arr?.latitude != null && arr?.longitude != null) {
+            arrLat = parseFloat(String(arr.latitude));
+            arrLng = parseFloat(String(arr.longitude));
+          }
+        }
+      } catch { /* best-effort */ }
+
+      // Best available position: live ADS-B > great-circle estimate
+      let lat: number | null = live?.lat ?? null;
+      let lng: number | null = live?.lon ?? null;
+      let positionIsEstimated = false;
+
+      if ((lat == null || lng == null) && depLat != null && depLng != null && arrLat != null && arrLng != null) {
+        // Estimate position from elapsed time if we have takeoff time
+        const takeoffMs = summary?.datetime_takeoff ? new Date(summary.datetime_takeoff).getTime() : null;
+        const flightTimeMs = summary?.flight_time ? summary.flight_time * 60 * 1000 : null;
+        if (takeoffMs && flightTimeMs) {
+          const elapsed = Date.now() - takeoffMs;
+          const fraction = Math.min(1, Math.max(0, elapsed / flightTimeMs));
+          const est = interpolateGreatCircle(depLat, depLng, arrLat, arrLng, fraction);
+          lat = est.lat;
+          lng = est.lng;
+          positionIsEstimated = true;
+        } else {
+          // Use midpoint as fallback
+          const mid = interpolateGreatCircle(depLat, depLng, arrLat, arrLng, 0.5);
+          midLat = mid.lat;
+          midLng = mid.lng;
+          lat = mid.lat;
+          lng = mid.lng;
+          positionIsEstimated = true;
+        }
+      }
+
+      if (depLat != null && depLng != null && arrLat != null && arrLng != null) {
+        const mid = interpolateGreatCircle(depLat, depLng, arrLat, arrLng, 0.5);
+        midLat = mid.lat;
+        midLng = mid.lng;
+      }
+
+      // Fetch weather at current position
+      const weather = lat != null && lng != null
+        ? await fetchWeatherAtPosition(lat, lng, live?.alt ?? 35000).catch(() => null)
+        : null;
+
+      // Prayer times at current position
+      const prayers = lat != null && lng != null
+        ? getPrayerTimesResult(lat, lng, 'MWL')
+        : null;
+
+      const isLanded = !!summary?.datetime_landed || summary?.flight_ended === true;
+      const isAirborne = !!live && !isLanded;
+
+      return {
+        flightIata: live?.flight ?? summary?.flight ?? normalized,
+        callsign: live?.callsign ?? summary?.callsign,
+        airline: live?.operating_as ?? summary?.operating_as,
+        aircraft: live?.type ?? summary?.type,
+        registration: live?.reg ?? summary?.reg,
+        depIata,
+        arrIata,
+        // Live position
+        lat,
+        lng,
+        alt: live?.alt ?? null,
+        gspeed: live?.gspeed ?? null,
+        vspeed: live?.vspeed ?? null,
+        track: live?.track ?? null,
+        eta: live?.eta ?? null,
+        positionIsEstimated,
+        isAirborne,
+        isLanded,
+        summaryOnly,
+        // Flight summary
+        datetimeTakeoff: summary?.datetime_takeoff ?? null,
+        datetimeLanded: summary?.datetime_landed ?? null,
+        scheduledDeparture: summary?.scheduled_departure ?? null,
+        scheduledArrival: summary?.scheduled_arrival ?? null,
+        runwayTakeoff: summary?.runway_takeoff ?? null,
+        runwayLanded: summary?.runway_landed ?? null,
+        flightTimeMinutes: summary?.flight_time ?? null,
+        actualDistanceKm: summary?.actual_distance ? Math.round(summary.actual_distance) : null,
+        firstSeen: summary?.first_seen ?? null,
+        lastSeen: summary?.last_seen ?? null,
+        // Airport coords
+        depLat,
+        depLng,
+        arrLat,
+        arrLng,
+        midLat,
+        midLng,
+        // Weather + prayers
+        weather,
+        prayers,
+        fr24Quota: fr24?.quota ?? summaryResult?.quota ?? null,
+      };
+    }),
+
+  /**
    * Calculate prayer times for a given lat/lng position.
    */
   prayerTimes: publicProcedure

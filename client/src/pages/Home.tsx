@@ -465,13 +465,34 @@ export default function Home() {
       }
     );
 
-  // FR24 fallback: when AirLabs quota is exhausted, fetch from FR24 directly
+  // FR24 full tracking: when AirLabs quota is exhausted, use FR24 for live position + full data
   const isQuotaError = !!error && error.data?.code === 'TOO_MANY_REQUESTS';
-  const { data: fr24FallbackData, isLoading: fr24FallbackLoading } =
-    trpc.flight.fr24Lookup.useQuery(
-      { flightIata: flightIata ?? "", hoursBack: 30 },
-      { enabled: isQuotaError && !!flightIata, staleTime: 5 * 60 * 1000, retry: 1 }
-    );
+  const fr24LandedLocked = useRef(false);
+  const {
+    data: fr24TrackingData,
+    isLoading: fr24FallbackLoading,
+    error: fr24TrackingError,
+  } = trpc.flight.fr24FullTracking.useQuery(
+    { flightIata: flightIata ?? "" },
+    {
+      enabled: isQuotaError && !!flightIata && !fr24LandedLocked.current,
+      refetchInterval: (query) => {
+        const d = query.state.data;
+        if (d?.isLanded || d?.summaryOnly) return false;
+        return REFRESH_INTERVAL_MS;
+      },
+      staleTime: 14 * 60 * 1000,
+      retry: 1,
+    }
+  );
+
+  // Lock FR24 polling once landed
+  useEffect(() => {
+    if (fr24TrackingData?.isLanded) fr24LandedLocked.current = true;
+  }, [fr24TrackingData?.isLanded]);
+
+  // Keep fr24FallbackData as alias for backward compat with auto-save useEffect
+  const fr24FallbackData = fr24TrackingData;
 
   // Lock polling as soon as we detect a landed flight
   useEffect(() => {
@@ -1199,74 +1220,201 @@ export default function Home() {
           const isQErr = error.data?.code === 'TOO_MANY_REQUESTS';
           const isPrecondition = error.data?.code === 'PRECONDITION_FAILED';
 
-          // If quota error + FR24 fallback data is available, show FR24 Arrival Summary
-          if (isQErr && fr24FallbackData) {
-            const f = fr24FallbackData;
+          // If quota error + FR24 tracking data is available, show full FR24 tracking view
+          if (isQErr && fr24TrackingData) {
+            const f = fr24TrackingData;
             const fmtUtc = (iso: string | null | undefined) => {
               if (!iso) return '—';
               return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) +
                 ' · ' + new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' });
             };
-            const depDelay = f.datetimeTakeoff
-              ? null // we don't have scheduled dep from FR24 alone
-              : null;
             const flightHours = f.flightTimeMinutes
               ? `${Math.floor(f.flightTimeMinutes / 60)}h ${f.flightTimeMinutes % 60}m`
               : '—';
+            const fr24HasLive = f.lat != null && f.lng != null && !f.positionIsEstimated;
+            const fr24Elapsed = f.datetimeTakeoff ? elapsedMinutes(f.datetimeTakeoff) : null;
             return (
               <div className="px-4 py-4 space-y-4">
                 {/* Quota warning banner */}
                 <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm" style={{ background: 'oklch(0.18 0.04 60 / 0.5)', border: '1px solid oklch(0.55 0.15 60 / 0.4)' }}>
                   <AlertTriangle className="w-4 h-4 shrink-0" style={{ color: 'oklch(0.75 0.15 60)' }} />
-                  <span style={{ color: 'oklch(0.85 0.1 60)' }}>AirLabs quota exhausted — showing data from FR24</span>
+                  <span style={{ color: 'oklch(0.85 0.1 60)' }}>AirLabs quota exhausted — tracking via FR24{f.positionIsEstimated ? ' (estimated position)' : fr24HasLive ? ' (live ADS-B)' : ''}</span>
                 </div>
 
-                {/* FR24 Arrival Summary */}
-                <div className="rounded-xl border overflow-hidden" style={{ background: f.isLanded ? 'oklch(0.15 0.04 145 / 0.6)' : 'oklch(0.13 0.02 240 / 0.6)', borderColor: f.isLanded ? 'oklch(0.55 0.18 145 / 0.5)' : 'oklch(0.4 0.08 240 / 0.4)' }}>
-                  <div className="px-5 py-4 space-y-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: f.isLanded ? 'oklch(0.55 0.18 145 / 0.2)' : 'oklch(0.4 0.1 240 / 0.2)', border: `1px solid ${f.isLanded ? 'oklch(0.55 0.18 145 / 0.4)' : 'oklch(0.4 0.1 240 / 0.4)'}` }}>
-                        <Plane className="w-5 h-5" style={{ color: f.isLanded ? 'oklch(0.75 0.18 145)' : 'oklch(0.7 0.1 240)' }} />
+                {/* Landed banner */}
+                {f.isLanded && (
+                  <div className="rounded-xl border overflow-hidden" style={{ background: 'oklch(0.15 0.04 145 / 0.6)', borderColor: 'oklch(0.55 0.18 145 / 0.5)' }}>
+                    <div className="flex items-start gap-4 px-5 py-4">
+                      <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: 'oklch(0.55 0.18 145 / 0.2)', border: '1px solid oklch(0.55 0.18 145 / 0.4)' }}>
+                        <Plane className="w-5 h-5" style={{ color: 'oklch(0.75 0.18 145)' }} />
                       </div>
-                      <div>
-                        <div className="font-bold text-lg" style={{ color: f.isLanded ? 'oklch(0.75 0.18 145)' : 'oklch(0.9 0.05 240)' }}>
-                          {f.isLanded ? 'Flight Landed' : 'Flight In Progress'} — {f.flightIata}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-base font-bold" style={{ color: 'oklch(0.75 0.18 145)' }}>Flight Landed</span>
+                          <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: 'oklch(0.55 0.18 145 / 0.2)', color: 'oklch(0.75 0.18 145)' }}>ARRIVED</span>
                         </div>
-                        <div className="text-sm text-muted-foreground">{f.depIata} → {f.arrIata} · {f.aircraft} · {f.registration}</div>
+                        <div className="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-1.5 text-sm">
+                          <div>
+                            <span className="text-xs text-muted-foreground block">Arrived at</span>
+                            <span className="font-mono font-semibold text-foreground">{fmtUtc(f.datetimeLanded)}</span>
+                          </div>
+                          <div>
+                            <span className="text-xs text-muted-foreground block">Destination</span>
+                            <span className="font-mono font-semibold text-foreground">{f.arrIata ?? '—'}</span>
+                          </div>
+                          {f.runwayLanded && (
+                            <div>
+                              <span className="text-xs text-muted-foreground block">Runway</span>
+                              <span className="font-mono font-semibold text-foreground">{f.runwayLanded}</span>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
+                  </div>
+                )}
 
-                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                      <div className="rounded-lg px-3 py-2.5" style={{ background: 'oklch(0.1 0.02 240 / 0.5)' }}>
-                        <div className="text-xs text-muted-foreground mb-0.5">Departed</div>
-                        <div className="text-sm font-semibold">{fmtUtc(f.datetimeTakeoff)}</div>
-                        {f.runwayTakeoff && <div className="text-xs text-muted-foreground">Runway {f.runwayTakeoff}</div>}
+                {/* Identity bar */}
+                <div className="avi-panel">
+                  <div className="px-4 py-3">
+                    <div className="flex flex-wrap items-center gap-3 mb-3">
+                      <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-primary/10 border border-primary/20 shrink-0">
+                        <Plane className="w-5 h-5 text-primary" />
                       </div>
-                      <div className="rounded-lg px-3 py-2.5" style={{ background: 'oklch(0.1 0.02 240 / 0.5)' }}>
-                        <div className="text-xs text-muted-foreground mb-0.5">{f.isLanded ? 'Arrived' : 'Est. Arrival'}</div>
-                        <div className="text-sm font-semibold">{fmtUtc(f.datetimeLanded)}</div>
-                        {f.runwayLanded && <div className="text-xs text-muted-foreground">Runway {f.runwayLanded}</div>}
-                      </div>
-                      <div className="rounded-lg px-3 py-2.5" style={{ background: 'oklch(0.1 0.02 240 / 0.5)' }}>
-                        <div className="text-xs text-muted-foreground mb-0.5">Flight Time</div>
-                        <div className="text-sm font-semibold">{flightHours}</div>
-                        {f.actualDistanceKm && <div className="text-xs text-muted-foreground">{f.actualDistanceKm.toLocaleString()} km</div>}
-                      </div>
-                      <div className="rounded-lg px-3 py-2.5" style={{ background: 'oklch(0.1 0.02 240 / 0.5)' }}>
-                        <div className="text-xs text-muted-foreground mb-0.5">Aircraft</div>
-                        <div className="text-sm font-semibold">{f.aircraft ?? '—'}</div>
-                        <div className="text-xs text-muted-foreground">{f.registration ?? ''}</div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-2xl font-bold font-mono text-foreground">{f.flightIata}</span>
+                          <span className={`status-badge ${f.isLanded ? 'status-landed' : f.isAirborne ? 'status-en-route' : 'status-scheduled'}`}>
+                            {f.isLanded ? 'Landed' : f.isAirborne ? 'En Route' : 'Scheduled'}
+                          </span>
+                          {f.callsign && <span className="text-xs font-mono text-muted-foreground border border-border/60 rounded px-1.5 py-0.5">{f.callsign}</span>}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5">{f.airline ?? '—'}{f.aircraft ? ` · ${f.aircraft}` : ''}</p>
                       </div>
                     </div>
-
-                    {depDelay !== null && (
-                      <div className="text-xs text-muted-foreground">Delay info not available from FR24 alone</div>
-                    )}
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="text-center min-w-[52px]">
+                        <div className="text-xl font-bold font-mono text-foreground">{f.depIata ?? '—'}</div>
+                      </div>
+                      <div className="flex-1 flex items-center gap-1 text-muted-foreground/30 min-w-0">
+                        <div className="flex-1 h-px bg-border" />
+                        <ArrowRight className="w-3.5 h-3.5 text-primary shrink-0" />
+                        <div className="flex-1 h-px bg-border" />
+                      </div>
+                      <div className="text-center min-w-[52px]">
+                        <div className="text-xl font-bold font-mono text-foreground">{f.arrIata ?? '—'}</div>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
+                {/* Time strip */}
+                <div className="avi-panel">
+                  <PanelHeader icon={<Hourglass className="w-3.5 h-3.5" />} title="Flight Times" />
+                  <div className="time-strip-grid">
+                    <TimeCard label="Elapsed" value={fr24Elapsed != null ? formatDuration(fr24Elapsed) : '—'} sub={f.datetimeTakeoff ? `Dep ${fmtUtc(f.datetimeTakeoff)}` : undefined} accent="cyan" />
+                    <TimeCard label="Flight Time" value={flightHours} sub={f.actualDistanceKm ? `${f.actualDistanceKm.toLocaleString()} km` : undefined} accent="green" />
+                    <TimeCard label="Arrived" value={f.datetimeLanded ? fmtUtc(f.datetimeLanded) : f.eta ? fmtUtc(f.eta) : '—'} sub={f.runwayLanded ? `Runway ${f.runwayLanded}` : undefined} accent="primary" />
+                    <TimeCard label="Altitude" value={f.alt != null ? `${f.alt.toLocaleString()} ft` : '—'} sub={f.gspeed != null ? `${f.gspeed} km/h` : undefined} accent="amber" />
+                  </div>
+                </div>
+
+                {/* Map */}
+                <div className="avi-panel">
+                  <PanelHeader
+                    icon={<MapPin className="w-3.5 h-3.5" />}
+                    title="Live Position"
+                    extra={
+                      fr24HasLive ? (
+                        <div className="flex items-center gap-1.5"><div className="pulse-dot" /><span className="text-xs text-muted-foreground">Live ADS-B</span></div>
+                      ) : f.positionIsEstimated ? (
+                        <span className="text-xs text-amber-400/80">⚠ Estimated</span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">No live position</span>
+                      )
+                    }
+                  />
+                  <div style={{ height: 360 }}>
+                    <FlightMap
+                      lat={f.lat ?? undefined}
+                      lng={f.lng ?? undefined}
+                      depLat={f.depLat ?? undefined}
+                      depLng={f.depLng ?? undefined}
+                      arrLat={f.arrLat ?? undefined}
+                      arrLng={f.arrLng ?? undefined}
+                      heading={f.track ?? undefined}
+                      depIata={f.depIata ?? undefined}
+                      arrIata={f.arrIata ?? undefined}
+                    />
+                  </div>
+                </div>
+
+                {/* Telemetry */}
+                <div className="avi-panel">
+                  <PanelHeader icon={<Activity className="w-3.5 h-3.5" />} title="Telemetry" badge="FR24"
+                    extra={!fr24HasLive && <span className="text-xs text-muted-foreground italic">{f.positionIsEstimated ? '⚠ Estimated position' : 'No live ADS-B'}</span>}
+                  />
+                  <div className="telem-grid">
+                    <TelemCell label="Latitude" value={f.lat != null ? f.lat.toFixed(4) + '°' : undefined} />
+                    <TelemCell label="Longitude" value={f.lng != null ? f.lng.toFixed(4) + '°' : undefined} />
+                    <TelemCell label="Altitude" value={f.alt ?? undefined} unit="ft" />
+                    <TelemCell label="Ground Speed" value={f.gspeed ?? undefined} unit="km/h" />
+                    <TelemCell label="Heading" value={f.track != null ? `${f.track}°` : undefined} />
+                    <TelemCell label="Vertical Speed" value={f.vspeed != null ? (f.vspeed > 0 ? `+${f.vspeed}` : String(f.vspeed)) : undefined} unit="ft/min" />
+                    <TelemCell label="Registration" value={f.registration ?? undefined} />
+                    <TelemCell label="Aircraft" value={f.aircraft ?? undefined} />
+                  </div>
+                </div>
+
+                {/* Weather */}
+                {f.weather && (
+                  <div className="avi-panel">
+                    <PanelHeader icon={<Wind className="w-3.5 h-3.5" />} title="Wind & Atmosphere" badge={`@ ${f.weather.pressureLevel} (~${f.weather.altitudeFt.toLocaleString()} ft)`} />
+                    <div className="telem-grid">
+                      <TelemCell label="Wind Speed" value={f.weather.windSpeedKmh} unit="km/h" highlight />
+                      <TelemCell label="Wind Direction" value={`${f.weather.windDirectionDeg}° ${windDirectionToCompass(f.weather.windDirectionDeg)}`} />
+                      <TelemCell label="Temperature" value={`${f.weather.temperatureCelsius}°C`} highlight />
+                      <TelemCell label="Pressure Level" value={f.weather.pressureLevel} />
+                    </div>
+                  </div>
+                )}
+
+                {/* Prayer times */}
+                <div className="avi-panel">
+                  <PanelHeader icon={<MoonIcon className="w-3.5 h-3.5" />} title="Prayer Times" />
+                  <PrayerPanel lat={f.lat ?? undefined} lng={f.lng ?? undefined} positionIsEstimated={f.positionIsEstimated} isLanded={f.isLanded} />
+                </div>
+
+                {/* FR24 Operations */}
+                <div className="avi-panel">
+                  <PanelHeader icon={<Radio className="w-3.5 h-3.5" />} title="Operations" badge="FR24" />
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-px bg-border">
+                    {[
+                      { label: 'Callsign', value: f.callsign },
+                      { label: 'Takeoff Runway', value: f.runwayTakeoff },
+                      { label: 'Landing Runway', value: f.runwayLanded },
+                      { label: 'Takeoff Time', value: f.datetimeTakeoff ? fmtUtc(f.datetimeTakeoff) : null },
+                      { label: 'Landing Time', value: f.datetimeLanded ? fmtUtc(f.datetimeLanded) : null },
+                      { label: 'Distance Flown', value: f.actualDistanceKm ? `${f.actualDistanceKm.toLocaleString()} km` : null },
+                    ].filter(r => r.value != null).map(({ label, value }) => (
+                      <div key={label} className="bg-card px-4 py-3 flex flex-col gap-0.5">
+                        <span className="avi-label">{label}</span>
+                        <span className="avi-value text-sm font-mono font-semibold">{value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* FR24 Quota */}
+                {f.fr24Quota && (
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground/40 px-1">
+                    <Radio className="w-3 h-3" />
+                    <span>FR24 credits: <span className="font-mono">{f.fr24Quota.creditsRemaining?.toLocaleString() ?? '—'}</span> remaining</span>
+                  </div>
+                )}
+
                 <div className="flex gap-3 flex-wrap">
-                  <button onClick={() => { setFlightIata(null); setInputValue(""); inputRef.current?.focus(); }}
+                  <button onClick={() => { setFlightIata(null); setInputValue(''); inputRef.current?.focus(); }}
                     className="text-sm text-primary hover:underline">
                     Track another flight
                   </button>

@@ -173,3 +173,8 @@
 - [x] Fix Flight History table: fall back to UTC fields when AirLabs local fields are null; FR24 path now populates actualDepLocal/actualArrLocal from datetimeTakeoff/datetimeLanded
 - [x] Add backfill tRPC procedure: for each history row missing local times, fetch from FR24 and update the record
 - [x] Populate depDelayMin/arrDelayMin in FR24 save path using datetimeTakeoff vs scheduled time
+
+## Round 21 — FR24 as full AirLabs replacement
+- [x] Fix FR24 date filter: fr24Lookup and fetchFr24FlightByIata now prefer today's UTC date when multiple results exist
+- [x] Wire FR24 live position into main tracking view: new fr24FullTracking procedure returns live ADS-B + weather + prayer times; full tracking view rendered in FR24 mode
+- [x] FR24 fallback shows full flight card: identity bar, time strip, map, telemetry, weather, prayer panel, operations panel

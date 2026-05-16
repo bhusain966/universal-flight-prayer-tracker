@@ -59,6 +59,9 @@ export interface Fr24FlightSummary {
   first_seen?: string;
   last_seen?: string;
   flight_ended?: boolean;
+  // Scheduled times (may be present in some FR24 API responses)
+  scheduled_departure?: string;
+  scheduled_arrival?: string;
 }
 
 export interface Fr24Quota {
@@ -123,8 +126,24 @@ export async function fetchFr24FlightByIata(
       },
     );
     if (!res.data || res.data.length === 0) return null;
-    // Return the most recent entry (last in array)
-    const summary = res.data[res.data.length - 1];
+
+    // Selection strategy (priority order):
+    // 1. A not-yet-departed entry (no first_seen AND no datetime_takeoff) — this is a
+    //    scheduled/predeparture record for today's flight.
+    // 2. An entry whose first_seen or datetime_takeoff is today (UTC).
+    // 3. The most recent entry (last in array) as a final fallback.
+    const todayUtc = new Date().toISOString().slice(0, 10); // 'YYYY-MM-DD'
+
+    // Priority 1: scheduled but not yet airborne (no timestamps at all)
+    const predepartureEntry = res.data.find(s => !s.first_seen && !s.datetime_takeoff);
+
+    // Priority 2: has timestamps and they are from today
+    const todayEntry = res.data.find(s => {
+      const seen = s.first_seen ?? s.datetime_takeoff;
+      return seen && seen.slice(0, 10) === todayUtc;
+    });
+
+    const summary = predepartureEntry ?? todayEntry ?? res.data[res.data.length - 1];
     return { summary, quota };
   } catch {
     return null;
