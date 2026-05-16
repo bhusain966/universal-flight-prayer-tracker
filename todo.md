@@ -36,3 +36,6 @@
 - [x] Integrate FR24 as secondary data source for richer telemetry
 - [x] Display squawk, callsign, ICAO hex, ADS-B source, runway, distance flown, category from FR24 (wind/temp not available in FR24 API)
 - [x] Add refresh countdown timer (circular ring + mm:ss) + last-refreshed indicator to header
+
+## Updates (Round 4)
+- [x] Make flight route arc clearly visible on Leaflet dark map (bright color, thick stroke, dashed completed portion vs remaining)
