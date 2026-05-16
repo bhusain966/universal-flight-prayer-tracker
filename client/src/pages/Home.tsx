@@ -23,16 +23,26 @@ import {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function formatTime(iso?: string | null): string {
-  if (!iso) return "—";
+/** Normalise AirLabs datetime strings like '2026-05-16 00:19' to ISO '2026-05-16T00:19Z' */
+function parseAirlabsDate(raw?: string | null): Date | null {
+  if (!raw) return null;
   try {
+    // AirLabs returns 'YYYY-MM-DD HH:MM' (UTC) — replace space with T and append Z
+    const iso = raw.includes("T") ? raw : raw.replace(" ", "T") + (raw.endsWith("Z") ? "" : "Z");
     const d = new Date(iso);
-    const hh = String(d.getUTCHours()).padStart(2, "0");
-    const mm = String(d.getUTCMinutes()).padStart(2, "0");
-    return `${hh}:${mm} UTC`;
+    return isNaN(d.getTime()) ? null : d;
   } catch {
-    return iso;
+    return null;
   }
+}
+
+function formatTime(raw?: string | null): string {
+  if (!raw) return "—";
+  const d = parseAirlabsDate(raw);
+  if (!d) return raw;
+  const hh = String(d.getUTCHours()).padStart(2, "0");
+  const mm = String(d.getUTCMinutes()).padStart(2, "0");
+  return `${hh}:${mm} UTC`;
 }
 
 function formatDuration(mins?: number | null): string {
@@ -46,13 +56,10 @@ function formatDuration(mins?: number | null): string {
 
 function elapsedMinutes(depIso?: string | null): number | null {
   if (!depIso) return null;
-  try {
-    const dep = new Date(depIso).getTime();
-    const diff = Math.floor((Date.now() - dep) / 60000);
-    return diff > 0 ? diff : null;
-  } catch {
-    return null;
-  }
+  const dep = parseAirlabsDate(depIso);
+  if (!dep) return null;
+  const diff = Math.floor((Date.now() - dep.getTime()) / 60000);
+  return diff > 0 ? diff : null;
 }
 
 function formatDelay(mins?: number | null): string {

@@ -57,3 +57,7 @@
 - [x] Add URL deep linking: /track/:flightIata route that auto-loads the flight on open
 - [x] Update search to push URL when flight is searched
 - [x] Shareable URL works on direct open (bookmarkable)
+
+## Updates (Round 8)
+- [x] Fix date parsing: AirLabs returns space-separated datetimes ('2026-05-16 00:19') not ISO format — fixed in router with normDt() helper, 2 regression tests added
+- [x] Verify Elapsed, Remaining, ETA UTC, Total Duration all populate correctly with live QR726 data (48 tests passing)

@@ -6,6 +6,17 @@ import { fetchFr24FlightData } from "../fr24";
 import { getPrayerTimesResult } from "../prayer";
 import { fetchWeatherAtPosition } from "../weather";
 
+/**
+ * AirLabs returns datetimes as 'YYYY-MM-DD HH:MM' (UTC, space-separated).
+ * Normalise to ISO 8601 'YYYY-MM-DDTHH:MMZ' so new Date() always works on any client.
+ */
+function normDt(raw: string | null | undefined): string | undefined {
+  if (!raw) return undefined;
+  if (raw.includes("T")) return raw; // already ISO
+  const n = raw.replace(" ", "T") + "Z";
+  return isNaN(new Date(n).getTime()) ? raw : n;
+}
+
 export const flightRouter = router({
   /**
    * Look up a live flight by IATA flight number.
@@ -40,6 +51,18 @@ export const flightRouter = router({
                 flight.alt ?? 35000,
               ).catch(() => null)
             : null;
+
+        // Normalise all AirLabs datetime strings to ISO 8601 in the router response
+        // This ensures the fix applies regardless of whether data comes from real API or mocks
+        if (data?.flight) {
+          const f = data.flight;
+          f.dep_time_utc = normDt(f.dep_time_utc);
+          f.dep_actual_utc = normDt(f.dep_actual_utc);
+          f.dep_estimated_utc = normDt(f.dep_estimated_utc);
+          f.arr_time_utc = normDt(f.arr_time_utc);
+          f.arr_actual_utc = normDt(f.arr_actual_utc);
+          f.arr_estimated_utc = normDt(f.arr_estimated_utc);
+        }
 
         return {
           success: true as const,

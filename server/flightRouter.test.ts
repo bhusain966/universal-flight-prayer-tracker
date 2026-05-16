@@ -217,3 +217,58 @@ describe("flight.prayerTimes procedure", () => {
     ).rejects.toThrow();
   });
 });
+
+describe("AirLabs datetime normalisation regression", () => {
+  it("passes through ISO timestamps unchanged", async () => {
+    // Simulate AirLabs returning already-ISO timestamps (should not break)
+    mockFetchFlightData.mockResolvedValueOnce({
+      ...MOCK_FLIGHT_DATA,
+      flight: {
+        ...MOCK_FLIGHT_DATA.flight,
+        dep_actual_utc: "2026-05-16T00:19:00Z",
+        arr_estimated_utc: "2026-05-16T13:35:00Z",
+      },
+    });
+    mockFetchFr24.mockResolvedValueOnce(null);
+
+    const caller = appRouter.createCaller(createPublicContext());
+    const result = await caller.flight.lookup({ flightIata: "QR726" });
+
+    // ISO timestamps should be preserved as-is
+    expect(result.data?.flight.dep_actual_utc).toBe("2026-05-16T00:19:00Z");
+    expect(result.data?.flight.arr_estimated_utc).toBe("2026-05-16T13:35:00Z");
+  });
+
+  it("normalises AirLabs space-separated UTC datetimes to ISO 8601", async () => {
+    // Simulate real AirLabs response with space-separated datetimes
+    mockFetchFlightData.mockResolvedValueOnce({
+      ...MOCK_FLIGHT_DATA,
+      flight: {
+        ...MOCK_FLIGHT_DATA.flight,
+        dep_actual_utc: "2026-05-16 00:19",
+        dep_time_utc: "2026-05-16 00:20",
+        arr_estimated_utc: "2026-05-16 13:35",
+        arr_time_utc: "2026-05-16 14:15",
+      },
+    });
+    mockFetchFr24.mockResolvedValueOnce(null);
+
+    const caller = appRouter.createCaller(createPublicContext());
+    const result = await caller.flight.lookup({ flightIata: "QR726" });
+
+    // Space-separated strings should be converted to ISO 8601
+    expect(result.data?.flight.dep_actual_utc).toBe("2026-05-16T00:19Z");
+    expect(result.data?.flight.dep_time_utc).toBe("2026-05-16T00:20Z");
+    expect(result.data?.flight.arr_estimated_utc).toBe("2026-05-16T13:35Z");
+    expect(result.data?.flight.arr_time_utc).toBe("2026-05-16T14:15Z");
+
+    // Verify the normalised strings parse correctly as UTC dates
+    const dep = new Date(result.data?.flight.dep_actual_utc!);
+    expect(dep.getUTCHours()).toBe(0);
+    expect(dep.getUTCMinutes()).toBe(19);
+
+    const arr = new Date(result.data?.flight.arr_estimated_utc!);
+    expect(arr.getUTCHours()).toBe(13);
+    expect(arr.getUTCMinutes()).toBe(35);
+  });
+});
