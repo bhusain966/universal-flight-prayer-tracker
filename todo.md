@@ -145,11 +145,20 @@
 - [x] Push to GitHub (commit 2884a9a)
 
 ## Updates (Round 18 — Flight Not Found Fix & Upcoming Trips)
-- [ ] Diagnose Flight Not Found: check AirLabs live response for QR726 and understand why it fails
-- [ ] Fix error handling: distinguish "flight not in AirLabs window" from "invalid flight number"
-- [ ] Show helpful message when flight exists but is not yet in AirLabs active window (e.g. "Flight departs tomorrow — add to Upcoming Trips")
-- [ ] Create upcoming_trips DB table (flightIata, scheduledDepUtc, depIata, arrIata, notes, userId)
-- [ ] Add tRPC procedures: trips.add, trips.list, trips.delete
-- [ ] Build Upcoming Trips panel on home screen: add trip form, list of upcoming flights with countdown
-- [ ] Auto-activate live tracking when departure time arrives (client-side timer checks every minute)
+- [x] Diagnose Flight Not Found: AirLabs monthly quota (1000 calls/month) exhausted during development
+- [x] Fix error handling: quota-exceeded now shows amber 'API Quota Exceeded' banner with clear message and reset date guidance
+- [x] Show 'Add to Upcoming Trips' shortcut button on quota-exceeded error screen
+- [x] Create upcoming_trips DB table (flightIata, scheduledDepUtc, depIata, arrIata, notes, userId)
+- [x] Add tRPC procedures: flight.addTrip, flight.listTrips, flight.deleteTrip
+- [x] Build Upcoming Trips panel on home screen: Add Trip modal, countdown list with IMMINENT badge, Track/Delete buttons
+- [x] Auto-activate live tracking 5 min before departure (client-side interval checks every 30 seconds)
+- [x] Update README.md with Upcoming Trips and API Quota sections, pushed to GitHub (commit 49dd082)
+
+## Updates (Round 19 — FR24-based Arrival Summary)
+- [ ] Investigate FR24 API: confirm which endpoints return actual dep/arr times, duration, distance, status for a landed flight
+- [ ] Add flight.lookupFr24 tRPC procedure that fetches FR24 summary data by flight IATA (no AirLabs dependency)
+- [ ] When AirLabs quota is exceeded (TOO_MANY_REQUESTS), automatically try FR24 for arrival data
+- [ ] Build FR24-based Arrival Summary card that shows: actual dep/arr times, delay, duration, distance, aircraft, baggage belt, status
+- [ ] Compute prayer count from dep/arr UTC timestamps using flightPrayerSummary procedure
+- [ ] Save the FR24-sourced flight to history DB (same saveHistory procedure)
 - [ ] Update README.md and push to GitHub

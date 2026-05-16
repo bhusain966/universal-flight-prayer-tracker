@@ -99,6 +99,39 @@ async function fr24Get<T>(path: string, params: Record<string, string> = {}): Pr
 }
 
 /**
+ * Fetch flight summary by IATA flight number using a date-range search.
+ * This works even when the flight is not currently live (e.g. just landed, or AirLabs quota exhausted).
+ * Searches the last 24 hours by default.
+ */
+export async function fetchFr24FlightByIata(
+  flightIata: string,
+  hoursBack = 24,
+): Promise<{ summary: Fr24FlightSummary; quota?: Fr24Quota } | null> {
+  const now = new Date();
+  const from = new Date(now.getTime() - hoursBack * 60 * 60 * 1000);
+  const to = new Date(now.getTime() + 2 * 60 * 60 * 1000); // +2h for flights still airborne
+
+  const fmt = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, 'Z');
+
+  try {
+    const { data: res, quota } = await fr24Get<{ data: Fr24FlightSummary[] }>(
+      '/flight-summary/full',
+      {
+        flight_datetime_from: fmt(from),
+        flight_datetime_to: fmt(to),
+        flights: flightIata.toUpperCase(),
+      },
+    );
+    if (!res.data || res.data.length === 0) return null;
+    // Return the most recent entry (last in array)
+    const summary = res.data[res.data.length - 1];
+    return { summary, quota };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Fetch live position + flight summary for a given IATA flight number.
  * Returns null if the flight is not found in FR24 (not an error — it may just not be airborne).
  */

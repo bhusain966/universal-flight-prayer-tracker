@@ -2,7 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { publicProcedure, router } from "../_core/trpc";
 import { fetchFlightData } from "../airlabs";
-import { fetchFr24FlightData } from "../fr24";
+import { fetchFr24FlightData, fetchFr24FlightByIata } from "../fr24";
 import { getPrayerTimesResult, calculatePrayerTimes } from "../prayer";
 import { fetchWeatherAtPosition } from "../weather";
 import { saveFlightHistory, getRecentFlights, getFlightHistoryByIata, getFlightHistoryPaginated, addUpcomingTrip, getUpcomingTrips, deleteUpcomingTrip } from "../db";
@@ -201,6 +201,12 @@ export const flightRouter = router({
           throw new TRPCError({
             code: "TOO_MANY_REQUESTS",
             message: 'AirLabs API monthly quota has been exceeded. Quota resets on the 1st of next month. You can still add this flight to Upcoming Trips and tracking will resume when the quota resets.',
+          });
+        }
+        if (message.startsWith('FLIGHT_NOT_YET_ACTIVE')) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: message.replace('FLIGHT_NOT_YET_ACTIVE: ', ''),
           });
         }
         throw new TRPCError({
@@ -443,6 +449,52 @@ export const flightRouter = router({
     .mutation(async ({ input }) => {
       await deleteUpcomingTrip(input.id);
       return { success: true };
+    }),
+
+  /**
+   * Fetch flight data directly from FR24 (no AirLabs dependency).
+   * Used as a fallback when AirLabs quota is exhausted.
+   * Searches the last 24 hours for the given flight IATA.
+   */
+  fr24Lookup: publicProcedure
+    .input(z.object({
+      flightIata: z.string().min(2).max(8),
+      hoursBack: z.number().int().min(1).max(72).optional().default(24),
+    }))
+    .query(async ({ input }) => {
+      const result = await fetchFr24FlightByIata(input.flightIata, input.hoursBack);
+      if (!result) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: `Flight ${input.flightIata.toUpperCase()} not found in FR24 within the last ${input.hoursBack} hours.`,
+        });
+      }
+      const { summary, quota } = result;
+      const isLanded = !!summary.datetime_landed || summary.flight_ended === true;
+      return {
+        flightIata: summary.flight ?? input.flightIata.toUpperCase(),
+        callsign: summary.callsign,
+        airline: summary.operating_as,
+        aircraft: summary.type,
+        registration: summary.reg,
+        depIata: summary.orig_iata,
+        arrIata: summary.dest_iata_actual ?? summary.dest_iata,
+        depIcao: summary.orig_icao,
+        arrIcao: summary.dest_icao_actual ?? summary.dest_icao,
+        datetimeTakeoff: summary.datetime_takeoff ?? null,
+        datetimeLanded: summary.datetime_landed ?? null,
+        runwayTakeoff: summary.runway_takeoff ?? null,
+        runwayLanded: summary.runway_landed ?? null,
+        flightTimeMinutes: summary.flight_time ?? null,
+        actualDistanceKm: summary.actual_distance ? Math.round(summary.actual_distance) : null,
+        circleDistanceKm: summary.circle_distance ? Math.round(summary.circle_distance) : null,
+        category: summary.category,
+        firstSeen: summary.first_seen ?? null,
+        lastSeen: summary.last_seen ?? null,
+        flightEnded: summary.flight_ended ?? false,
+        isLanded,
+        fr24Quota: quota,
+      };
     }),
 
   /**

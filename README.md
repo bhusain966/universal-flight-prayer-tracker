@@ -6,7 +6,6 @@ A real-time, dark-themed aviation dashboard that lets you track any live flight 
 ![Node](https://img.shields.io/badge/Node.js-22-green?style=flat-square)
 ![MySQL](https://img.shields.io/badge/Database-MySQL%208-orange?style=flat-square)
 ![Tests](https://img.shields.io/badge/Tests-61%20passing-brightgreen?style=flat-square)
-![Features](https://img.shields.io/badge/Features-Export%20CSV%20%7C%20Share%20Arrival-blueviolet?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-lightgrey?style=flat-square)
 
 ---
@@ -52,6 +51,19 @@ Enter any IATA flight number (e.g. `QR726`, `EK202`, `BA117`) to load a full liv
 
 When ADS-B is unavailable, position is estimated via great-circle interpolation. All panels remain active with a clear "Est. Position" badge.
 
+### FR24 Fallback Mode (AirLabs Quota Exhausted)
+
+When the AirLabs monthly quota is exhausted, the app automatically switches to FR24 as the sole data source. Searching any flight number triggers a date-range query against the FR24 `/flight-summary/full` endpoint, which returns actual takeoff/landing times, flight duration, distance, aircraft registration, and runway information — all without requiring AirLabs. A yellow banner indicates the fallback is active. Once the AirLabs quota resets on the 1st of each month, normal dual-source tracking resumes automatically.
+
+### Upcoming Trips
+
+- Add any future flight to the **Upcoming Trips** panel on the home screen
+- Each trip shows a live countdown to departure (days, hours, minutes)
+- Flights within 5 minutes of departure show an **IMMINENT** badge
+- Tracking activates automatically when the departure time arrives
+- Trips can be deleted individually; the list persists in the database
+- When AirLabs quota is exhausted or a flight is not yet active, a shortcut button appears to add it directly to Upcoming Trips
+
 ### Arrival Detection and Arrival Summary
 
 - Landing detected from AirLabs (`status = "landed"`) or FR24 (`flight_ended = true`)
@@ -68,28 +80,8 @@ When ADS-B is unavailable, position is estimated via great-circle interpolation.
 - Sortable by: date, departure airport, arrival airport, prayer count, arrival delay, distance, duration
 - Configurable page size: 10 / 20 / 50 rows
 - Each row shows: flight, route, prayers (with names on hover), times, delay badge, duration, distance, aircraft, baggage belt
-- **Export CSV** button in the header downloads all visible rows to a `.csv` file
 - Click any row to re-open that flight in the tracker
 - Recent flights chips (last 10) on the home screen for quick access
-
-
-### Upcoming Trips
-- Add any future flight number with its scheduled UTC departure time and optional notes
-- Live countdown shown for each trip (e.g. "in 2d 4h", "in 35m", "IMMINENT")
-- Flight tracking auto-activates 5 minutes before the scheduled departure — no manual action needed
-- Trips are stored in the database; delete them individually once flown
-- From the quota-exceeded error screen, a shortcut button pre-fills the Add Trip form
-
-### API Quota & Error Handling
-- AirLabs monthly quota exhaustion now shows a clear "API Quota Exceeded" banner (amber) instead of a generic "Flight Not Found" error
-- FR24 credit balance and AirLabs call counts are displayed in the app footer after every successful lookup
-
-### Export & Sharing
-
-- **Export CSV** button on the `/history` page — downloads all currently visible rows as a `.csv` file with 24 columns (date, flight, route, times, delays, duration, distance, aircraft, baggage belt, prayers)
-- **Share Arrival Summary** button on the Arrival Summary card — uses the Web Share API on mobile (native share sheet) with a clipboard fallback on desktop; generates a pre-formatted message including flight number, route, arrival time, delay status, prayers prayed, and baggage belt
-- Shareable deep-link URLs: `/track/QR726`
-- Copy-link button in the flight identity bar
 
 ### API Quota Display
 

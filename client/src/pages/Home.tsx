@@ -463,6 +463,14 @@ export default function Home() {
       }
     );
 
+  // FR24 fallback: when AirLabs quota is exhausted, fetch from FR24 directly
+  const isQuotaError = !!error && error.data?.code === 'TOO_MANY_REQUESTS';
+  const { data: fr24FallbackData, isLoading: fr24FallbackLoading } =
+    trpc.flight.fr24Lookup.useQuery(
+      { flightIata: flightIata ?? "", hoursBack: 30 },
+      { enabled: isQuotaError && !!flightIata, staleTime: 5 * 60 * 1000, retry: 1 }
+    );
+
   // Lock polling as soon as we detect a landed flight
   useEffect(() => {
     if (data?.isLanded && !isLandedLocked) {
@@ -1078,19 +1086,107 @@ export default function Home() {
 
         {/* ── Error ── */}
         {flightIata && error && !isLoading && (() => {
-          const isQuotaError = error.data?.code === 'TOO_MANY_REQUESTS';
+          const isQErr = error.data?.code === 'TOO_MANY_REQUESTS';
+          const isPrecondition = error.data?.code === 'PRECONDITION_FAILED';
+
+          // If quota error + FR24 fallback data is available, show FR24 Arrival Summary
+          if (isQErr && fr24FallbackData) {
+            const f = fr24FallbackData;
+            const fmtUtc = (iso: string | null | undefined) => {
+              if (!iso) return '—';
+              return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) +
+                ' · ' + new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' });
+            };
+            const depDelay = f.datetimeTakeoff
+              ? null // we don't have scheduled dep from FR24 alone
+              : null;
+            const flightHours = f.flightTimeMinutes
+              ? `${Math.floor(f.flightTimeMinutes / 60)}h ${f.flightTimeMinutes % 60}m`
+              : '—';
+            return (
+              <div className="px-4 py-4 space-y-4">
+                {/* Quota warning banner */}
+                <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm" style={{ background: 'oklch(0.18 0.04 60 / 0.5)', border: '1px solid oklch(0.55 0.15 60 / 0.4)' }}>
+                  <AlertTriangle className="w-4 h-4 shrink-0" style={{ color: 'oklch(0.75 0.15 60)' }} />
+                  <span style={{ color: 'oklch(0.85 0.1 60)' }}>AirLabs quota exhausted — showing data from FR24</span>
+                </div>
+
+                {/* FR24 Arrival Summary */}
+                <div className="rounded-xl border overflow-hidden" style={{ background: f.isLanded ? 'oklch(0.15 0.04 145 / 0.6)' : 'oklch(0.13 0.02 240 / 0.6)', borderColor: f.isLanded ? 'oklch(0.55 0.18 145 / 0.5)' : 'oklch(0.4 0.08 240 / 0.4)' }}>
+                  <div className="px-5 py-4 space-y-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: f.isLanded ? 'oklch(0.55 0.18 145 / 0.2)' : 'oklch(0.4 0.1 240 / 0.2)', border: `1px solid ${f.isLanded ? 'oklch(0.55 0.18 145 / 0.4)' : 'oklch(0.4 0.1 240 / 0.4)'}` }}>
+                        <Plane className="w-5 h-5" style={{ color: f.isLanded ? 'oklch(0.75 0.18 145)' : 'oklch(0.7 0.1 240)' }} />
+                      </div>
+                      <div>
+                        <div className="font-bold text-lg" style={{ color: f.isLanded ? 'oklch(0.75 0.18 145)' : 'oklch(0.9 0.05 240)' }}>
+                          {f.isLanded ? 'Flight Landed' : 'Flight In Progress'} — {f.flightIata}
+                        </div>
+                        <div className="text-sm text-muted-foreground">{f.depIata} → {f.arrIata} · {f.aircraft} · {f.registration}</div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                      <div className="rounded-lg px-3 py-2.5" style={{ background: 'oklch(0.1 0.02 240 / 0.5)' }}>
+                        <div className="text-xs text-muted-foreground mb-0.5">Departed</div>
+                        <div className="text-sm font-semibold">{fmtUtc(f.datetimeTakeoff)}</div>
+                        {f.runwayTakeoff && <div className="text-xs text-muted-foreground">Runway {f.runwayTakeoff}</div>}
+                      </div>
+                      <div className="rounded-lg px-3 py-2.5" style={{ background: 'oklch(0.1 0.02 240 / 0.5)' }}>
+                        <div className="text-xs text-muted-foreground mb-0.5">{f.isLanded ? 'Arrived' : 'Est. Arrival'}</div>
+                        <div className="text-sm font-semibold">{fmtUtc(f.datetimeLanded)}</div>
+                        {f.runwayLanded && <div className="text-xs text-muted-foreground">Runway {f.runwayLanded}</div>}
+                      </div>
+                      <div className="rounded-lg px-3 py-2.5" style={{ background: 'oklch(0.1 0.02 240 / 0.5)' }}>
+                        <div className="text-xs text-muted-foreground mb-0.5">Flight Time</div>
+                        <div className="text-sm font-semibold">{flightHours}</div>
+                        {f.actualDistanceKm && <div className="text-xs text-muted-foreground">{f.actualDistanceKm.toLocaleString()} km</div>}
+                      </div>
+                      <div className="rounded-lg px-3 py-2.5" style={{ background: 'oklch(0.1 0.02 240 / 0.5)' }}>
+                        <div className="text-xs text-muted-foreground mb-0.5">Aircraft</div>
+                        <div className="text-sm font-semibold">{f.aircraft ?? '—'}</div>
+                        <div className="text-xs text-muted-foreground">{f.registration ?? ''}</div>
+                      </div>
+                    </div>
+
+                    {depDelay !== null && (
+                      <div className="text-xs text-muted-foreground">Delay info not available from FR24 alone</div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex gap-3 flex-wrap">
+                  <button onClick={() => { setFlightIata(null); setInputValue(""); inputRef.current?.focus(); }}
+                    className="text-sm text-primary hover:underline">
+                    Track another flight
+                  </button>
+                </div>
+              </div>
+            );
+          }
+
+          // Loading FR24 fallback
+          if (isQErr && fr24FallbackLoading) {
+            return (
+              <div className="flex flex-col items-center justify-center min-h-[40vh] gap-3">
+                <div className="w-8 h-8 rounded-full border-2 border-amber-400 border-t-transparent animate-spin" />
+                <p className="text-sm text-muted-foreground">AirLabs quota exceeded — fetching from FR24…</p>
+              </div>
+            );
+          }
+
           return (
             <div className="flex flex-col items-center justify-center min-h-[40vh] gap-4">
-              <div className={`w-14 h-14 rounded-xl flex items-center justify-center ${isQuotaError ? 'bg-amber-500/10 border border-amber-500/30' : 'bg-destructive/10 border border-destructive/30'}`}>
-                <AlertTriangle className={`w-7 h-7 ${isQuotaError ? 'text-amber-400' : 'text-destructive'}`} />
+              <div className={`w-14 h-14 rounded-xl flex items-center justify-center ${isQErr ? 'bg-amber-500/10 border border-amber-500/30' : isPrecondition ? 'bg-blue-500/10 border border-blue-500/30' : 'bg-destructive/10 border border-destructive/30'}`}>
+                <AlertTriangle className={`w-7 h-7 ${isQErr ? 'text-amber-400' : isPrecondition ? 'text-blue-400' : 'text-destructive'}`} />
               </div>
               <div className="text-center space-y-1 max-w-md">
                 <h3 className="font-semibold text-foreground">
-                  {isQuotaError ? 'API Quota Exceeded' : 'Flight Not Found'}
+                  {isQErr ? 'API Quota Exceeded' : isPrecondition ? 'Flight Not Yet Active' : 'Flight Not Found'}
                 </h3>
                 <p className="text-sm text-muted-foreground">
-                  {isQuotaError
-                    ? 'The AirLabs API monthly quota has been exhausted. Quota resets on the 1st of next month. You can add this flight to Upcoming Trips below — tracking will activate automatically when the quota resets and the departure time arrives.'
+                  {isQErr
+                    ? 'The AirLabs API monthly quota has been exhausted. Quota resets on the 1st of next month.'
                     : (error.message || `No data found for ${flightIata}. The flight may not be active or the number may be incorrect.`)}
                 </p>
               </div>
@@ -1099,10 +1195,10 @@ export default function Home() {
                   className="text-sm text-primary hover:underline">
                   Try another flight
                 </button>
-                {isQuotaError && (
+                {(isQErr || isPrecondition) && (
                   <button
-                    onClick={() => setShowAddTrip(true)}
-                    className="text-sm px-3 py-1.5 rounded-md border border-amber-500/40 text-amber-400 hover:bg-amber-500/10 transition-colors"
+                    onClick={() => { setShowAddTrip(true); setTripForm(f => ({ ...f, flightIata: flightIata ?? '' })); }}
+                    className={`text-sm px-3 py-1.5 rounded-md border transition-colors ${isQErr ? 'border-amber-500/40 text-amber-400 hover:bg-amber-500/10' : 'border-blue-500/40 text-blue-400 hover:bg-blue-500/10'}`}
                   >
                     + Add to Upcoming Trips
                   </button>

@@ -228,6 +228,15 @@ export async function fetchFlightData(flightIata: string): Promise<FlightFullDat
   }
 
   if (!liveData && !scheduleData) {
+    // Distinguish between an invalid flight number and a valid flight that is not yet
+    // in the AirLabs active window (i.e. future scheduled flight).
+    // AirLabs returns an empty response body (null / empty object) for future flights,
+    // whereas a truly invalid IATA code also returns empty. We surface a distinct error
+    // so the frontend can suggest "Add to Upcoming Trips" for valid-looking numbers.
+    const iataPattern = /^[A-Z0-9]{2,3}\d{1,4}[A-Z]?$/i;
+    if (iataPattern.test(normalized)) {
+      throw new Error(`FLIGHT_NOT_YET_ACTIVE: Flight ${normalized} is not currently active. It may be a future flight not yet in the AirLabs tracking window. Add it to Upcoming Trips and tracking will activate automatically at departure time.`);
+    }
     throw new Error(`Flight ${normalized} not found. Please check the flight number and try again.`);
   }
 
