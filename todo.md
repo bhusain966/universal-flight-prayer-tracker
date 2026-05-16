@@ -73,3 +73,11 @@
 - [x] Add estimated position fallback: great-circle interpolation using route % progress when no live ADS-B
 - [x] Prayer times and weather now activate using estimated position when live GPS unavailable
 - [x] Show estimated position badge in telemetry and prayer panels (54 tests passing)
+
+## Updates (Round 11)
+- [x] Create multi-stage Dockerfile (build + production Node image)
+- [x] Create docker-compose.yml with app + MySQL services
+- [x] Create .dockerignore
+- [x] Create .env.example with all required environment variables documented
+- [x] Write comprehensive README.md with full installation, Docker, and env var instructions
+- [x] Initialize private GitHub repository and push all code

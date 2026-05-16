@@ -1,0 +1,46 @@
+# ── Node modules (re-installed inside the image) ──────────────────────────
+**/node_modules
+.pnpm-store/
+
+# ── Build artefacts ────────────────────────────────────────────────────────
+dist/
+build/
+
+# ── Environment / secrets ──────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Dev / editor files ─────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ── Logs ──────────────────────────────────────────────────────────────────
+logs/
+*.log
+.manus-logs/
+
+# ── Test / CI artefacts ───────────────────────────────────────────────────
+coverage/
+*.lcov
+.nyc_output/
+
+# ── Git ───────────────────────────────────────────────────────────────────
+.git/
+.gitignore
+
+# ── Manus platform artefacts ──────────────────────────────────────────────
+.webdev/
+client/public/__manus__/version.json
+references/
+
+# ── Misc ──────────────────────────────────────────────────────────────────
+*.md
+!README.md
+tmp/
+temp/
+screenshots/
