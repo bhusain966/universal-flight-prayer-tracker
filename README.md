@@ -5,7 +5,7 @@ A real-time, dark-themed aviation dashboard that lets you track any live flight 
 ![Stack](https://img.shields.io/badge/Stack-React%2019%20%2B%20Express%204%20%2B%20tRPC%2011-blue?style=flat-square)
 ![Node](https://img.shields.io/badge/Node.js-22-green?style=flat-square)
 ![MySQL](https://img.shields.io/badge/Database-MySQL%208-orange?style=flat-square)
-![Tests](https://img.shields.io/badge/Tests-70%20passing-brightgreen?style=flat-square)
+![Tests](https://img.shields.io/badge/Tests-73%20passing-brightgreen?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-lightgrey?style=flat-square)
 
 ---
@@ -51,9 +51,20 @@ Enter any IATA flight number (e.g. `QR726`, `EK202`, `BA117`) to load a full liv
 
 When ADS-B is unavailable, position is estimated via great-circle interpolation. All panels remain active with a clear "Est. Position" badge.
 
-### FR24 Fallback Mode (AirLabs Quota Exhausted)
+### FR24 Full Tracking Mode (AirLabs Quota Exhausted)
 
-When the AirLabs monthly quota is exhausted, the app automatically switches to FR24 as the sole data source. Searching any flight number triggers a date-range query against the FR24 `/flight-summary/full` endpoint, which returns actual takeoff/landing times, flight duration, distance, aircraft registration, and runway information — all without requiring AirLabs. A yellow banner indicates the fallback is active. When a landed flight is detected via FR24, the app automatically computes prayer times using the great-circle midpoint of the route (resolved from a local airport coordinates dataset — no API quota consumed) and saves the flight to the history database, exactly as the normal AirLabs landing path does. Once the AirLabs quota resets on the 1st of each month, normal dual-source tracking resumes automatically.
+When the AirLabs monthly quota is exhausted, the app automatically switches to FR24 as the **complete replacement data source** — not just a summary fallback. The `fr24FullTracking` tRPC procedure combines:
+
+- **Live ADS-B position** from FR24's `/live/flight-positions/full` endpoint (lat, lng, altitude, ground speed, heading, vertical speed, squawk, ICAO hex)
+- **Flight summary** from FR24's `/flight-summary/full` endpoint (takeoff/landing times, duration, distance, runway, aircraft registration)
+- **Weather data** from Open-Meteo at the aircraft's current altitude
+- **Airport coordinates** from a local offline dataset (zero API quota consumed)
+
+The full tracking view renders identically to the AirLabs path: identity bar, live map with great-circle arc, telemetry panel, weather panel, prayer times panel, and operations panel. A yellow banner indicates FR24 mode is active. Live position polling continues every 15 minutes until landing is detected.
+
+**Smart date selection:** When FR24 returns multiple results for a flight number (e.g. yesterday's landed flight + today's scheduled departure), the app prioritises the not-yet-departed (predeparture) entry, then today's UTC-dated entry, then falls back to the most recent result.
+
+When a landed flight is detected, prayer times are computed using the great-circle midpoint of the route and the record is saved to the history database. Once the AirLabs quota resets on the 1st of each month, normal dual-source tracking resumes automatically.
 
 ### Upcoming Trips
 
@@ -102,7 +113,7 @@ When the AirLabs monthly quota is exhausted, the app automatically switches to F
 | Weather | Open-Meteo pressure-level forecast API (free, no key required) |
 | Timezone | Google Maps Timezone API (DST-aware, via Manus proxy) |
 | Prayer Calc | Custom astronomical algorithm (MWL / ISNA / Egypt / Makkah / Karachi) |
-| Testing | Vitest (61 tests) |
+| Testing | Vitest (73 tests) |
 | Container | Docker (multi-stage build), Docker Compose |
 
 ---
@@ -283,7 +294,8 @@ Auto-refresh fires every 15 minutes and stops completely once the flight lands.
 | AirLabs /flight | 1 | Schedule, aircraft metadata, local times |
 | AirLabs /flights | 1 | Live ADS-B telemetry |
 | AirLabs /airports | 0-2 | Fallback only when coords missing |
-| FR24 | 1 | Optional; graceful fallback if unavailable |
+| FR24 `/flight-summary/full` | 1 | Summary data; used in both primary and fallback modes |
+| FR24 `/live/flight-positions/full` | 1 | Live ADS-B position; used in FR24 full tracking mode |
 | Open-Meteo | 1 | Free, no key, no rate limit |
 | Google Maps Timezone | 0-1 | Only when aircraft moves > 0.5 degrees |
 
@@ -310,7 +322,8 @@ server/
   db.ts                    Drizzle query helpers (incl. paginated history)
   routers/
     flight.ts              tRPC procedures: lookup, saveHistory, historyList,
-                           recentFlights, flightPrayerSummary, timezone, prayerTimes
+                           recentFlights, flightPrayerSummary, timezone, prayerTimes,
+                           fr24Lookup, fr24FullTracking, backfillHistory
 drizzle/
   schema.ts                Database tables (users, flight_history)
   migrations/              Generated SQL migrations
@@ -326,7 +339,7 @@ docker-compose.yml         App + MySQL services
 pnpm test
 ```
 
-The test suite (61 tests) covers prayer calculation for all 5 methods, flight router response shape and datetime normalisation, great-circle geometry and antimeridian unwrapping, weather pressure-level selection, arrival detection logic, AirLabs/FR24 quota field extraction, and authentication logout.
+The test suite (73 tests) covers prayer calculation for all 5 methods, flight router response shape and datetime normalisation, great-circle geometry and antimeridian unwrapping, weather pressure-level selection, arrival detection logic, AirLabs/FR24 quota field extraction, FR24 multi-result date selection strategy (predeparture vs today vs fallback), FR24 full-tracking airport coordinate enrichment, midpoint computation, and authentication logout.
 
 ---
 
