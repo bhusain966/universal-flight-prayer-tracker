@@ -6,6 +6,7 @@ A real-time, dark-themed aviation dashboard that lets you track any live flight 
 ![Node](https://img.shields.io/badge/Node.js-22-green?style=flat-square)
 ![MySQL](https://img.shields.io/badge/Database-MySQL%208-orange?style=flat-square)
 ![Tests](https://img.shields.io/badge/Tests-61%20passing-brightgreen?style=flat-square)
+![Features](https://img.shields.io/badge/Features-Export%20CSV%20%7C%20Share%20Arrival-blueviolet?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-lightgrey?style=flat-square)
 
 ---
@@ -67,8 +68,16 @@ When ADS-B is unavailable, position is estimated via great-circle interpolation.
 - Sortable by: date, departure airport, arrival airport, prayer count, arrival delay, distance, duration
 - Configurable page size: 10 / 20 / 50 rows
 - Each row shows: flight, route, prayers (with names on hover), times, delay badge, duration, distance, aircraft, baggage belt
+- **Export CSV** button in the header downloads all visible rows to a `.csv` file
 - Click any row to re-open that flight in the tracker
 - Recent flights chips (last 10) on the home screen for quick access
+
+### Export & Sharing
+
+- **Export CSV** button on the `/history` page — downloads all currently visible rows as a `.csv` file with 24 columns (date, flight, route, times, delays, duration, distance, aircraft, baggage belt, prayers)
+- **Share Arrival Summary** button on the Arrival Summary card — uses the Web Share API on mobile (native share sheet) with a clipboard fallback on desktop; generates a pre-formatted message including flight number, route, arrival time, delay status, prayers prayed, and baggage belt
+- Shareable deep-link URLs: `/track/QR726`
+- Copy-link button in the flight identity bar
 
 ### API Quota Display
 

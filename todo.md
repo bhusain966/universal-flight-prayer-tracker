@@ -137,3 +137,9 @@
 - [x] Register /history route in App.tsx
 - [x] Update README.md with all features (timezone fix, local-at-aircraft, arrival detection, API quota, flight history, prayer summary, exact timezone API, /history page)
 - [x] Push updated README and all code to GitHub (commit ed71ff9)
+
+## Updates (Round 17 — Export CSV & Share Buttons)
+- [ ] Add Export CSV button to /history page (downloads all visible rows as CSV)
+- [ ] Add Share button to Arrival Summary card (Web Share API with clipboard fallback)
+- [ ] Update README.md with new features
+- [ ] Push to GitHub

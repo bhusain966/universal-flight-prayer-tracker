@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useParams, useLocation, Link } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { toast } from "sonner";
 import FlightMap from "@/components/FlightMap";
 import PrayerPanel from "@/components/PrayerPanel";
 import {
@@ -409,6 +410,8 @@ export default function Home() {
   const [isLandedLocked, setIsLandedLocked] = useState(false);
   // Track whether we have already saved this flight to history
   const [historySaved, setHistorySaved] = useState(false);
+  // Store the prayer summary after the history record is saved (for Share Arrival)
+  const [lastSavedPrayers, setLastSavedPrayers] = useState<{ count: number; names: string }>({ count: 0, names: "" });
 
   const { data, isLoading, error, refetch, isFetching } =
     trpc.flight.lookup.useQuery(
@@ -514,7 +517,13 @@ export default function Home() {
         .query({ depUtc, arrUtc, lat: midLat, lng: midLng })
         .then((ps) => {
           saveHistory.mutate(buildRecord(ps.prayerCount, ps.prayerNames, ps.prayerDetails), {
-            onSuccess: () => utils.flight.recentFlights.invalidate(),
+            onSuccess: () => {
+              utils.flight.recentFlights.invalidate();
+              try {
+                const names = ps.prayerNames ? JSON.parse(ps.prayerNames) as string[] : [];
+                setLastSavedPrayers({ count: ps.prayerCount, names: names.join(", ") });
+              } catch { /* ignore */ }
+            },
           });
         })
         .catch(() => {
@@ -536,6 +545,8 @@ export default function Home() {
     if (val.length < 2) return;
     // Reset landed lock when a new flight is entered
     setIsLandedLocked(false);
+    setHistorySaved(false);
+    setLastSavedPrayers({ count: 0, names: "" });
     setFlightIata(val);
     // Push to URL for deep linking / bookmarking
     navigate(`/track/${val}`);
@@ -565,10 +576,53 @@ export default function Home() {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // fallback: open in new tab
       window.open(url, "_blank");
     }
   }, [flightIata]);
+
+  const handleShareArrival = useCallback(async () => {
+    if (!flight) return;
+    const route = `${flight.dep_iata ?? "?"} → ${flight.arr_iata ?? "?"}`;
+    const arrTime = flight.arr_actual
+      ? formatLocalTime(flight.arr_actual).local
+      : fr24?.datetimeLanded
+      ? formatTime(fr24.datetimeLanded)
+      : null;
+    const delayStr =
+      (flight.arr_delay ?? 0) === 0
+        ? "on time"
+        : (flight.arr_delay ?? 0) > 0
+        ? `${flight.arr_delay} min late`
+        : `${Math.abs(flight.arr_delay ?? 0)} min early`;
+    const prayerLine =
+      lastSavedPrayers.count > 0
+        ? `Prayed ${lastSavedPrayers.count} prayer${lastSavedPrayers.count !== 1 ? "s" : ""} (${lastSavedPrayers.names}) during the flight.`
+        : "No prayers during this flight.";
+    const beltLine = flight.arr_baggage ? `Baggage belt ${flight.arr_baggage}.` : "";
+    const text = [
+      `✈️ ${flight.flight_iata ?? flightIata} ${route}`,
+      arrTime ? `Landed ${arrTime} (${delayStr}).` : `Landed (${delayStr}).`,
+      prayerLine,
+      beltLine,
+    ]
+      .filter(Boolean)
+      .join(" ");
+    const url = `${window.location.origin}/track/${flightIata}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: `${flight.flight_iata ?? flightIata} Arrival`, text, url });
+        return;
+      } catch {
+        // user cancelled or not supported — fall through to clipboard
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(`${text}\n${url}`);
+      toast.success("Copied to clipboard", { description: "Arrival summary ready to paste." });
+    } catch {
+      toast.error("Could not copy", { description: "Please copy the URL manually." });
+    }
+  }, [flight, fr24, flightIata, lastSavedPrayers]);
 
   // Compute time metrics
   const depActual = flight?.dep_actual_utc ?? flight?.dep_estimated_utc;
@@ -1027,6 +1081,17 @@ export default function Home() {
                         <div className="font-mono font-semibold text-foreground">{fr24.runwayLanded}</div>
                       </div>
                     )}
+                  </div>
+
+                  {/* Share Arrival Summary button */}
+                  <div className="mt-5 pt-4 border-t border-border/30 flex justify-end">
+                    <button
+                      onClick={handleShareArrival}
+                      className="flex items-center gap-2 px-4 py-2 rounded-lg border border-border/60 text-sm text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors"
+                    >
+                      <Share2 className="w-4 h-4" />
+                      Share Arrival Summary
+                    </button>
                   </div>
                 </div>
               </div>

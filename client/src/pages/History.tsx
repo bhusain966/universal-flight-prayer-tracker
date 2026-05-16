@@ -29,7 +29,9 @@ import {
   Clock,
   MapPin,
   Moon,
+  Download,
 } from "lucide-react";
+import { toast } from "sonner";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -154,6 +156,102 @@ function SortableHeader({
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50];
 
+// ─── CSV export ───────────────────────────────────────────────────────────────
+
+function escapeCsv(val: unknown): string {
+  if (val == null) return "";
+  const s = String(val);
+  if (s.includes(",") || s.includes('"') || s.includes("\n")) {
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
+}
+
+type HistoryRow = {
+  id: number;
+  flightIata: string;
+  flightIcao?: string | null;
+  airlineName?: string | null;
+  airlineIata?: string | null;
+  aircraft?: string | null;
+  regNumber?: string | null;
+  depIata?: string | null;
+  depCity?: string | null;
+  arrIata?: string | null;
+  arrCity?: string | null;
+  scheduledDepUtc?: string | null;
+  actualDepUtc?: string | null;
+  scheduledArrUtc?: string | null;
+  actualArrUtc?: string | null;
+  scheduledDepLocal?: string | null;
+  actualDepLocal?: string | null;
+  scheduledArrLocal?: string | null;
+  actualArrLocal?: string | null;
+  depDelayMin?: number | null;
+  arrDelayMin?: number | null;
+  durationMin?: number | null;
+  actualDurationMin?: number | null;
+  distanceKm?: number | null;
+  baggageBelt?: string | null;
+  arrTerminal?: string | null;
+  arrGate?: string | null;
+  runwayLanded?: string | null;
+  prayerCount?: number | null;
+  prayerNames?: string | null;
+  prayerDetails?: string | null;
+  trackedAt?: Date | string | null;
+};
+
+function rowsToCsv(rows: HistoryRow[]) {
+  const headers = [
+    "Date","Flight","Airline","From","Dep City","To","Arr City",
+    "Sched Dep (local)","Actual Dep (local)","Sched Arr (local)","Actual Arr (local)",
+    "Dep Delay (min)","Arr Delay (min)","Duration (min)","Actual Duration (min)",
+    "Distance (km)","Aircraft","Reg","Baggage Belt","Terminal","Gate","Runway",
+    "Prayer Count","Prayers",
+  ];
+  const lines = [headers.join(",")];
+  for (const r of rows) {
+    lines.push([
+      escapeCsv(r.trackedAt ? new Date(r.trackedAt).toISOString().slice(0,10) : null),
+      escapeCsv(r.flightIata),
+      escapeCsv(r.airlineName),
+      escapeCsv(r.depIata),
+      escapeCsv(r.depCity),
+      escapeCsv(r.arrIata),
+      escapeCsv(r.arrCity),
+      escapeCsv(r.scheduledDepLocal),
+      escapeCsv(r.actualDepLocal),
+      escapeCsv(r.scheduledArrLocal),
+      escapeCsv(r.actualArrLocal),
+      escapeCsv(r.depDelayMin),
+      escapeCsv(r.arrDelayMin),
+      escapeCsv(r.durationMin),
+      escapeCsv(r.actualDurationMin),
+      escapeCsv(r.distanceKm),
+      escapeCsv(r.aircraft),
+      escapeCsv(r.regNumber),
+      escapeCsv(r.baggageBelt),
+      escapeCsv(r.arrTerminal),
+      escapeCsv(r.arrGate),
+      escapeCsv(r.runwayLanded),
+      escapeCsv(r.prayerCount),
+      escapeCsv(r.prayerNames ? JSON.parse(r.prayerNames).join(" | ") : ""),
+    ].join(","));
+  }
+  return lines.join("\n");
+}
+
+function downloadCsv(content: string, filename: string) {
+  const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export default function History() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -198,11 +296,35 @@ export default function History() {
           </Link>
           <span className="text-border/60">/</span>
           <span className="text-sm text-muted-foreground font-medium">Flight History</span>
-          {data && (
-            <span className="ml-auto text-xs text-muted-foreground">
-              {data.total.toLocaleString()} flight{data.total !== 1 ? "s" : ""} tracked
-            </span>
-          )}
+          <div className="ml-auto flex items-center gap-3">
+            {data && (
+              <span className="text-xs text-muted-foreground">
+                {data.total.toLocaleString()} flight{data.total !== 1 ? "s" : ""} tracked
+              </span>
+            )}
+            {data && data.rows.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs gap-1.5 border-border/50 hover:bg-muted/30"
+                onClick={() => {
+                  try {
+                    const csv = rowsToCsv(data.rows);
+                    const date = new Date().toISOString().slice(0, 10);
+                    downloadCsv(csv, `flight-prayer-log-${date}.csv`);
+                    toast.success("CSV downloaded", {
+                      description: `${data.rows.length} flight${data.rows.length !== 1 ? "s" : ""} exported`,
+                    });
+                  } catch {
+                    toast.error("Export failed", { description: "Could not generate CSV file." });
+                  }
+                }}
+              >
+                <Download className="w-3.5 h-3.5" />
+                Export CSV
+              </Button>
+            )}
+          </div>
         </div>
       </header>
 
