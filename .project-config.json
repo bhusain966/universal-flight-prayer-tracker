@@ -15,10 +15,10 @@
   ],
   "git_remote": {
     "repo_url": "s3://vida-prod-gitrepo/webdev-git/310419663026746615/iYydjChkTBmvnkjXv4cCjZ",
-    "access_key_id": "ASIAZV3A2ECZAYOFRXEK",
-    "secret_access_key": "q6aVCXMNu8+FtsXceQievEKFjJC82FutDF6E2D8k",
-    "session_token": "IQoJb3JpZ2luX2VjELv//////////wEaCXVzLWVhc3QtMSJIMEYCIQCnwNHnZm/z8l5jG8d6IYjxHSQ6ZNmJ3XcP1OUlTS8uhgIhAN4PBfc1c5aBCF9LJwSI+B+D7RQz8pY+EW4NURHFg1I8Kv8DCIT//////////wEQBBoMNjY1Mzg2MDk4ODY2Igxxx81gqWtUOGYfRfwq0wPSUcXONrig+K8p8xN5vTigDWSzK9ldfpNUiB0wNuqOqNl/iw7RzkVn+xhgcyn0a0Eirt5x0cqazj+SEGDAgcMotObEdmknQEKEdaFIG9OAJMLbBLNG5Qn9FXmJYfGSAoijiBB5ivZNSQRtQR7MGZJMlnwdApmkRSATRvL8xmCUB3HFAssoKrMbKOmxdNYBQnctc3rXhK9JIq8wdbfxmKnDB9nNrpMyoDMmUGOLkj7KXPjrD9UTU1n2BWrlhmVE994Vb6bEkCVmkvG1DdEeYkUSTe3/bik7M9XRNe8pQwx8SbVhN4VihQr894IW4HWGuFH5s++JwS/MnYYy1S5mA+IDTPvyVeXdoEENU6epUDvyu7qocTyhS7miZtqS5kOngdX9aKiMyOlkC6k5oN45MdneT+oKsd0IaMaPhp5fPLPZF3Bi4kswgKT+RTl71jlrvVbJcb2PHKM9pGWiHYC+Ic3g8xR1DKGGM4G1NV6TEsiCFoeL/r0oUI6KSx31U0oXM0HJuNR1vYl50qfJZAYCfN87G1kAKieEWLpziSK5P3+gMGa/+DBBWyC4WIq/ZMrtIN6mkAwBS/dWfyMEoHrSYJzh8ZB0OztjKAXP7HdMwFoX8MiVfjCvr5/QBjqcAfE6OlfgLZ5cuvErhiP5fHSaSsBqjLx0FzC9iHDs/xtiMn6Ss4XVr8MEN92Ewft8/xs41To0tPudUhV97pQbRnp4Whun6dSjQebVxU0enc5wcNVa/lXC5s1SPuMfLJD4r8to7Akq8rRZ59/mEJsBe1yId97NKuE16jCEFPFoRsIMOxseCoI/zqgGWzPG8Xqmeo+JIQs/sUt6s3UPeg==",
-    "expiration": "2026-05-16T14:34:23.000Z"
+    "access_key_id": "ASIAZV3A2ECZPQKMWAHT",
+    "secret_access_key": "8avrI534+CZgQ0UyPqJ4GRc2rK8BFWHcSKqkJw14",
+    "session_token": "IQoJb3JpZ2luX2VjELz//////////wEaCXVzLWVhc3QtMSJIMEYCIQDQpx+TZVBsE3uLIJFrIV8asnu8Uj0NGPknxHDgMVwUCQIhAMvPkPAeLIhw3rMxX4EpJA3nerypu82CzY+Juxjdy00tKv8DCIT//////////wEQBBoMNjY1Mzg2MDk4ODY2IgwGdhJYDJICURkF/nUq0wOFqqUjtJNqQTqBOm7GxDbVPc1PTeqW4GREdQnxmA26D/kTu5wmA3xvN+OAmeHv2Hney9LeLP/Edk4ZiDLWuIawTOE+OIgPXDUG1DJtrrzuePazbpF3v2enZdK6VWhXajqwPbqqBXnfZSixLHREqed8kunzkIRujnuXCwO7qYTja5juRqKP04kvGk7956bU8aaux1/XN5XemAzTM3jGF1jtin9ov5fS2uYmCvzeym/GSeDfYIcO3IBFd0TNzOFMBrLOpnxhOl9xMNjTvcN0JAmCE3Bn0N8y1hr9abQlfLBkMBlVbmn88fxdnv52zb4euQ+3gA+BhfMNRta+m1PeUZdmaqvEpAh2F0h56QxWuyhGLDXJkQ9u7pg8Tn+ffpvjMLAs35tLGI+ZQ6gYIRE/ugMaBSuHZ+Eqmy2GUBlWFPnCD85KC+Shs6xmMRKcADbVELCW2m3g80qj2k6xI7NtycnCA0JFQf7vf6SSY+wV++zCjB3FmPc6HZ4Z/6VTONmE3Rm605wFVifUTxqgUTBnFDEVO/h1qOBrH3ShT+Cu8pnopCMMPdz9dqwWzc1wWfnPAlHtTxPKwZ8ojvrLD3BRx2ekQWkGzrInh4lxDRd7WlqO87RcFjCCvp/QBjqcAWbDJ2ROhCxS3L1SXxo5hEVPWucmDz11MIALd4NRTUcVZA00UC4egqyLcWSBobpN2VFJ9MuZ0cgJRlO7j6EzFKAERTpqoGkg8FaUDIYIPj3VJ6PDkQhWGH1IE1fwLVRp4ZV7I0Ltgoid/xjelj9PxvrzSTIE8qhExF3pX4fHOyrioxgUvZMoAhB99MLuLBqcxF0Y2btRgFEQxF1Q9Q==",
+    "expiration": "2026-05-16T15:05:38.000Z"
   },
   "name": "universal-flight-prayer-tracker",
   "path": "/home/ubuntu/universal-flight-prayer-tracker",
@@ -27,6 +27,7 @@
     "AIRLABS_API_KEY": "44dc44a2-51d0-46b2-826f-3210e7879951",
     "BUILT_IN_FORGE_API_KEY": "exmv7RGNxGekKLbqqhgo4G",
     "BUILT_IN_FORGE_API_URL": "https://forge.manus.ai",
+    "FR24_API_KEY": "2FaaWww8vW1EbU7nf67rboPvvMtwwAFgr6gkkqPz56d1d69a",
     "JWT_SECRET": "nmpvGpet7cX7PCLB4EMxKc",
     "OAUTH_SERVER_URL": "https://api.manus.im",
     "OWNER_NAME": "Bilal Husain",

@@ -29,3 +29,10 @@
 - [x] Change auto-refresh interval from 30 seconds to 15 minutes (rate limit protection)
 - [x] Display ETA field (minutes remaining) from AirLabs in the schedule panel
 - [x] Display UTC server time from AirLabs response
+
+## Updates (Round 3)
+- [x] Store FR24 API key as server-side secret
+- [x] Explore FR24 API endpoints and identify available fields (squawk, callsign, runway, distance, category, ETA, ADS-B source, hex)
+- [x] Integrate FR24 as secondary data source for richer telemetry
+- [x] Display squawk, callsign, ICAO hex, ADS-B source, runway, distance flown, category from FR24 (wind/temp not available in FR24 API)
+- [x] Add refresh countdown timer (circular ring + mm:ss) + last-refreshed indicator to header

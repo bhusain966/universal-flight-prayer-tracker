@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import FlightMap from "@/components/FlightMap";
 import PrayerPanel from "@/components/PrayerPanel";
@@ -11,6 +11,8 @@ import {
   Info,
   AlertTriangle,
   Activity,
+  Radio,
+  Timer,
 } from "lucide-react";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -31,6 +33,11 @@ function formatDelay(mins?: number | null): string {
   if (mins == null || mins === 0) return "On time";
   if (mins > 0) return `+${mins} min`;
   return `${mins} min`;
+}
+
+function formatDistance(km?: number | null): string {
+  if (km == null) return "—";
+  return `${Math.round(km).toLocaleString()} km`;
 }
 
 function getStatusClass(status?: string): string {
@@ -55,15 +62,22 @@ function PanelHeader({
   icon,
   title,
   extra,
+  badge,
 }: {
   icon: React.ReactNode;
   title: string;
   extra?: React.ReactNode;
+  badge?: string;
 }) {
   return (
     <div className="avi-panel-header">
       <span className="text-primary">{icon}</span>
       <span className="avi-panel-header-title">{title}</span>
+      {badge && (
+        <span className="ml-2 text-[10px] font-mono px-1.5 py-0.5 rounded border border-primary/30 text-primary/70 bg-primary/5">
+          {badge}
+        </span>
+      )}
       {extra && <span className="ml-auto">{extra}</span>}
     </div>
   );
@@ -73,15 +87,17 @@ function TelemCell({
   label,
   value,
   unit,
+  highlight,
 }: {
   label: string;
   value: string | number | undefined | null;
   unit?: string;
+  highlight?: boolean;
 }) {
   return (
     <div className="telem-cell">
       <span className="avi-label">{label}</span>
-      <span className="avi-value text-base font-semibold">
+      <span className={`avi-value text-base font-semibold ${highlight ? "text-primary" : ""}`}>
         {value != null && value !== "" ? (
           <>
             {value}
@@ -93,6 +109,15 @@ function TelemCell({
           <span className="text-muted-foreground/50">—</span>
         )}
       </span>
+    </div>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value?: string | number | null }) {
+  return (
+    <div className="flex items-center justify-between py-2 border-b border-border/40 last:border-0">
+      <span className="avi-label">{label}</span>
+      <span className="avi-value text-sm font-mono">{value ?? "—"}</span>
     </div>
   );
 }
@@ -111,7 +136,86 @@ function SkeletonPanel({ rows = 4 }: { rows?: number }) {
   );
 }
 
+/** Countdown showing mm:ss until next auto-refresh */
+function RefreshCountdown({
+  lastRefresh,
+  intervalMs,
+  isFetching,
+  onRefresh,
+}: {
+  lastRefresh: Date | null;
+  intervalMs: number;
+  isFetching: boolean;
+  onRefresh: () => void;
+}) {
+  const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!lastRefresh) {
+      setSecondsLeft(null);
+      return;
+    }
+    const tick = () => {
+      const elapsed = Date.now() - lastRefresh.getTime();
+      const remaining = Math.max(0, Math.ceil((intervalMs - elapsed) / 1000));
+      setSecondsLeft(remaining);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [lastRefresh, intervalMs]);
+
+  const mm = secondsLeft != null ? String(Math.floor(secondsLeft / 60)).padStart(2, "0") : "--";
+  const ss = secondsLeft != null ? String(secondsLeft % 60).padStart(2, "0") : "--";
+  const pct = secondsLeft != null ? ((intervalMs / 1000 - secondsLeft) / (intervalMs / 1000)) * 100 : 0;
+
+  return (
+    <button
+      onClick={onRefresh}
+      disabled={isFetching}
+      title="Click to refresh now"
+      className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50 group"
+    >
+      <div className="relative w-7 h-7 flex-shrink-0">
+        {/* Circular progress ring */}
+        <svg className="w-7 h-7 -rotate-90" viewBox="0 0 28 28">
+          <circle
+            cx="14" cy="14" r="11"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            className="text-border"
+          />
+          <circle
+            cx="14" cy="14" r="11"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeDasharray={`${2 * Math.PI * 11}`}
+            strokeDashoffset={`${2 * Math.PI * 11 * (1 - pct / 100)}`}
+            className="text-primary transition-all duration-1000"
+            strokeLinecap="round"
+          />
+        </svg>
+        <RefreshCw
+          className={`absolute inset-0 m-auto w-3 h-3 text-muted-foreground group-hover:text-primary transition-colors ${isFetching ? "animate-spin" : ""}`}
+        />
+      </div>
+      <div className="hidden sm:flex flex-col items-start leading-tight">
+        <span className="text-[10px] text-muted-foreground/60 uppercase tracking-wider">
+          {isFetching ? "Updating…" : lastRefresh ? `Updated ${lastRefresh.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "Not yet loaded"}
+        </span>
+        <span className="font-mono text-xs text-foreground">
+          {isFetching ? "—:——" : lastRefresh ? `Next: ${mm}:${ss}` : "—"}
+        </span>
+      </div>
+    </button>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
+
+const REFRESH_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
 
 export default function Home() {
   const [inputValue, setInputValue] = useState("");
@@ -124,7 +228,7 @@ export default function Home() {
       { flightIata: flightIata ?? "" },
       {
         enabled: !!flightIata,
-        refetchInterval: 15 * 60 * 1000, // 15 minutes — respects AirLabs rate limits
+        refetchInterval: REFRESH_INTERVAL_MS,
         staleTime: 14 * 60 * 1000,
         retry: 1,
       }
@@ -147,6 +251,7 @@ export default function Home() {
   const flight = data?.data?.flight;
   const depAirport = data?.data?.depAirport;
   const arrAirport = data?.data?.arrAirport;
+  const fr24 = data?.fr24;
   const hasLiveTelemetry = flight?.lat != null && flight?.lng != null;
   const depDelay = flight?.dep_delay;
   const arrDelay = flight?.arr_delay;
@@ -202,23 +307,15 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Refresh + live indicator */}
+          {/* Refresh countdown + live indicator */}
           <div className="flex items-center gap-3">
             {flightIata && (
-              <button
-                onClick={() => refetch()}
-                disabled={isFetching}
-                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
-              >
-                <RefreshCw
-                  className={`w-3.5 h-3.5 ${isFetching ? "animate-spin" : ""}`}
-                />
-                <span className="hidden sm:inline">
-                  {lastRefresh
-                    ? `Updated ${lastRefresh.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
-                    : "Refresh"}
-                </span>
-              </button>
+              <RefreshCountdown
+                lastRefresh={lastRefresh}
+                intervalMs={REFRESH_INTERVAL_MS}
+                isFetching={isFetching}
+                onRefresh={() => refetch()}
+              />
             )}
             {hasLiveTelemetry && (
               <div className="flex items-center gap-1.5">
@@ -334,7 +431,7 @@ export default function Home() {
                     <Plane className="w-5 h-5 text-primary" />
                   </div>
                   <div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-xl font-bold font-mono text-foreground">
                         {flight?.flight_iata}
                       </span>
@@ -343,9 +440,15 @@ export default function Home() {
                       >
                         {getStatusLabel(flight?.status)}
                       </span>
+                      {fr24?.callsign && (
+                        <span className="text-xs font-mono text-muted-foreground border border-border/60 rounded px-1.5 py-0.5">
+                          {fr24.callsign}
+                        </span>
+                      )}
                     </div>
                     <p className="text-xs text-muted-foreground">
                       {flight?.airline_name ?? flight?.airline_iata ?? "—"}
+                      {fr24?.category ? ` · ${fr24.category}` : ""}
                     </p>
                   </div>
                 </div>
@@ -375,16 +478,28 @@ export default function Home() {
                   </div>
                 </div>
 
-                {flight?.duration && (
-                  <div className="text-right">
-                    <div className="text-xs text-muted-foreground uppercase tracking-wider">
-                      Duration
+                <div className="flex flex-col items-end gap-1">
+                  {flight?.duration && (
+                    <div className="text-right">
+                      <div className="text-xs text-muted-foreground uppercase tracking-wider">
+                        Duration
+                      </div>
+                      <div className="font-mono text-sm text-foreground">
+                        {Math.floor(flight.duration / 60)}h {flight.duration % 60}m
+                      </div>
                     </div>
-                    <div className="font-mono text-sm text-foreground">
-                      {Math.floor(flight.duration / 60)}h {flight.duration % 60}m
+                  )}
+                  {fr24?.actualDistance && (
+                    <div className="text-right">
+                      <div className="text-xs text-muted-foreground uppercase tracking-wider">
+                        Dist. flown
+                      </div>
+                      <div className="font-mono text-sm text-primary">
+                        {formatDistance(fr24.actualDistance)}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
 
               {/* Progress bar */}
@@ -455,6 +570,7 @@ export default function Home() {
                   <PanelHeader
                     icon={<Activity className="w-3.5 h-3.5" />}
                     title="Telemetry"
+                    badge={fr24?.source ? `SRC: ${fr24.source}` : undefined}
                     extra={
                       !hasLiveTelemetry && (
                         <span className="text-xs text-muted-foreground italic">
@@ -507,6 +623,19 @@ export default function Home() {
                       }
                       unit="ft/min"
                     />
+                    {fr24?.squawk && (
+                      <TelemCell
+                        label="Squawk"
+                        value={fr24.squawk}
+                        highlight
+                      />
+                    )}
+                    {fr24?.hex && (
+                      <TelemCell
+                        label="ICAO Hex"
+                        value={fr24.hex}
+                      />
+                    )}
                   </div>
                 </div>
 
@@ -560,6 +689,22 @@ export default function Home() {
                             {flight?.dep_gate ? ` / G${flight.dep_gate}` : ""}
                           </div>
                         </div>
+                        {fr24?.runwayTakeoff && (
+                          <div>
+                            <div className="avi-label mb-0.5">Runway Used</div>
+                            <div className="avi-value text-sm font-mono text-primary">
+                              {fr24.runwayTakeoff}
+                            </div>
+                          </div>
+                        )}
+                        {fr24?.datetimeTakeoff && (
+                          <div>
+                            <div className="avi-label mb-0.5">Takeoff (actual)</div>
+                            <div className="avi-value text-sm">
+                              {formatTime(fr24.datetimeTakeoff)}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -614,13 +759,29 @@ export default function Home() {
                             {flight?.arr_gate ? ` / G${flight.arr_gate}` : ""}
                           </div>
                         </div>
+                        {fr24?.etaIso && (
+                          <div>
+                            <div className="avi-label mb-0.5">FR24 ETA</div>
+                            <div className="avi-value text-sm font-mono text-primary">
+                              {formatTime(fr24.etaIso)}
+                            </div>
+                          </div>
+                        )}
+                        {fr24?.runwayLanded && (
+                          <div>
+                            <div className="avi-label mb-0.5">Runway Landed</div>
+                            <div className="avi-value text-sm font-mono text-primary">
+                              {fr24.runwayLanded}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Right: Aircraft + Prayer */}
+              {/* Right: Aircraft + FR24 Ops + Prayer */}
               <div className="space-y-4">
                 {/* Aircraft info */}
                 <div className="avi-panel">
@@ -630,7 +791,7 @@ export default function Home() {
                   />
                   <div className="p-4 space-y-0">
                     {[
-                      { label: "Registration", value: flight?.reg_number },
+                      { label: "Registration", value: flight?.reg_number ?? fr24?.hex },
                       { label: "Model", value: flight?.model },
                       { label: "Manufacturer", value: flight?.manufacturer },
                       { label: "Aircraft ICAO", value: flight?.aircraft_icao },
@@ -642,18 +803,38 @@ export default function Home() {
                       { label: "Flight ICAO", value: flight?.flight_icao },
                       { label: "Country", value: flight?.flag },
                     ].map(({ label, value }) => (
-                      <div
-                        key={label}
-                        className="flex items-center justify-between py-2 border-b border-border/40 last:border-0"
-                      >
-                        <span className="avi-label">{label}</span>
-                        <span className="avi-value text-sm font-mono">
-                          {value ?? "—"}
-                        </span>
-                      </div>
+                      <InfoRow key={label} label={label} value={value} />
                     ))}
                   </div>
                 </div>
+
+                {/* FR24 Operational data */}
+                {fr24 && (
+                  <div className="avi-panel">
+                    <PanelHeader
+                      icon={<Radio className="w-3.5 h-3.5" />}
+                      title="Operations"
+                      badge="FR24"
+                    />
+                    <div className="p-4 space-y-0">
+                      {[
+                        { label: "Callsign", value: fr24.callsign },
+                        { label: "Squawk", value: fr24.squawk },
+                        { label: "ICAO Hex", value: fr24.hex },
+                        { label: "ADS-B Source", value: fr24.source },
+                        { label: "Category", value: fr24.category },
+                        { label: "Distance Flown", value: fr24.actualDistance ? formatDistance(fr24.actualDistance) : null },
+                        { label: "Takeoff Runway", value: fr24.runwayTakeoff },
+                        { label: "Landing Runway", value: fr24.runwayLanded },
+                        { label: "Takeoff Time", value: fr24.datetimeTakeoff ? formatTime(fr24.datetimeTakeoff) : null },
+                        { label: "Landing Time", value: fr24.datetimeLanded ? formatTime(fr24.datetimeLanded) : null },
+                        { label: "FR24 ID", value: fr24.fr24Id },
+                      ].map(({ label, value }) => (
+                        <InfoRow key={label} label={label} value={value} />
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Prayer times */}
                 <div className="avi-panel">
@@ -669,9 +850,9 @@ export default function Home() {
             {/* Footer */}
             <div className="flex flex-wrap items-center justify-center gap-4 py-2">
               <div className="flex items-center gap-2">
-                <RefreshCw className="w-3 h-3 text-muted-foreground/40" />
+                <Timer className="w-3 h-3 text-muted-foreground/40" />
                 <span className="text-xs text-muted-foreground/40">
-                  Auto-refreshing every 15 minutes · Last updated{" "}
+                  Data refreshes every 15 min · Last updated{" "}
                   {lastRefresh?.toLocaleTimeString() ?? "—"}
                 </span>
               </div>
