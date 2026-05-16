@@ -5,12 +5,14 @@ import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
+import History from "./pages/History";
 
 function Router() {
   return (
     <Switch>
       {/* Deep link: /track/QR726 auto-loads that flight */}
       <Route path="/track/:flightIata" component={Home} />
+      <Route path="/history" component={History} />
       <Route path="/" component={Home} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />

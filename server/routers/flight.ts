@@ -5,7 +5,7 @@ import { fetchFlightData } from "../airlabs";
 import { fetchFr24FlightData } from "../fr24";
 import { getPrayerTimesResult, calculatePrayerTimes } from "../prayer";
 import { fetchWeatherAtPosition } from "../weather";
-import { saveFlightHistory, getRecentFlights, getFlightHistoryByIata } from "../db";
+import { saveFlightHistory, getRecentFlights, getFlightHistoryByIata, getFlightHistoryPaginated } from "../db";
 import { makeRequest } from "../_core/map";
 
 /**
@@ -363,6 +363,28 @@ export const flightRouter = router({
         prayerNames:   JSON.stringify(prayersDuring.map(p => p.name)),
         prayerDetails: JSON.stringify(prayersDuring),
       };
+    }),
+
+  /**
+   * Return a paginated, sortable list of all tracked flights.
+   */
+  historyList: publicProcedure
+    .input(
+      z.object({
+        page:     z.number().int().min(1).default(1),
+        pageSize: z.number().int().min(1).max(100).default(20),
+        sortBy:   z.enum(["trackedAt", "depIata", "arrIata", "prayerCount", "arrDelayMin", "distanceKm", "actualDurationMin"]).default("trackedAt"),
+        order:    z.enum(["asc", "desc"]).default("desc"),
+      })
+    )
+    .query(async ({ input }) => {
+      const { rows, total } = await getFlightHistoryPaginated(
+        input.page,
+        input.pageSize,
+        input.sortBy,
+        input.order,
+      );
+      return { rows, total, page: input.page, pageSize: input.pageSize };
     }),
 
   /**

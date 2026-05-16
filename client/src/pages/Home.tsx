@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { useParams, useLocation } from "wouter";
+import { useParams, useLocation, Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import FlightMap from "@/components/FlightMap";
 import PrayerPanel from "@/components/PrayerPanel";
@@ -621,8 +621,14 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Refresh + live dot */}
+          {/* History link + Refresh + live dot */}
           <div className="flex items-center gap-3 shrink-0 ml-auto">
+            <Link href="/history">
+              <button className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground hover:text-amber-400 transition-colors">
+                <Clock className="w-3.5 h-3.5" />
+                <span>History</span>
+              </button>
+            </Link>
             {flightIata && (
               isLanded ? (
                 // Show a static "Landed" badge instead of the refresh control

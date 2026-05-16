@@ -1,11 +1,11 @@
-# ✈️ Universal Flight Prayer Tracker
+# Universal Flight Prayer Tracker
 
 A real-time, dark-themed aviation dashboard that lets you track any live flight by IATA flight number and calculates Islamic prayer times based on the aircraft's current GPS position.
 
 ![Stack](https://img.shields.io/badge/Stack-React%2019%20%2B%20Express%204%20%2B%20tRPC%2011-blue?style=flat-square)
 ![Node](https://img.shields.io/badge/Node.js-22-green?style=flat-square)
 ![MySQL](https://img.shields.io/badge/Database-MySQL%208-orange?style=flat-square)
-![Tests](https://img.shields.io/badge/Tests-54%20passing-brightgreen?style=flat-square)
+![Tests](https://img.shields.io/badge/Tests-61%20passing-brightgreen?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-lightgrey?style=flat-square)
 
 ---
@@ -18,36 +18,62 @@ Enter any IATA flight number (e.g. `QR726`, `EK202`, `BA117`) to load a full liv
 
 | Panel | Data Shown |
 |---|---|
-| **Identity Bar** | Airline, flight number, origin → destination, status badge, route progress % |
-| **Flight Times** | Elapsed time, remaining time, ETA (UTC), total flight duration |
-| **Live Map** | Dark Leaflet map · geodesic great-circle arc (cyan = flown, amber = remaining) · aircraft marker |
-| **Live Position** | Latitude, longitude, altitude (ft), ground speed (km/h), heading (°), vertical speed (ft/min) |
-| **Atmosphere** | Wind speed (km/h), wind direction (° + compass), temperature (°C) at cruise altitude |
-| **Schedule** | Scheduled vs actual departure/arrival, delay status, terminal, gate |
-| **Aircraft** | Registration, model, manufacturer, engine count/type, year built, airline IATA/ICAO |
-| **Operations (FR24)** | Squawk code, callsign, ICAO hex, ADS-B source, runway, distance flown, category |
+| **Identity Bar** | Airline, flight number, origin to destination, status badge, route progress % |
+| **Flight Times** | Elapsed time, remaining time, ETA, total duration, local time at aircraft |
+| **Live Map** | Dark Leaflet map with geodesic great-circle arc (cyan = flown, amber = remaining) |
+| **Live Position** | Latitude, longitude, altitude (ft), ground speed (km/h), heading, vertical speed |
+| **Atmosphere** | Wind speed, wind direction, temperature at cruise altitude |
+| **Schedule** | Scheduled vs actual times in **local airport time**, UTC sub-labels, delay, terminal, gate |
+| **Aircraft** | Registration, model, manufacturer, engine type, year built, airline codes |
+| **Operations (FR24)** | Squawk, callsign, ICAO hex, ADS-B source, runway, distance flown |
 
 ### Prayer Times Module
 
-Prayer times are calculated using the aircraft's live GPS coordinates (or an estimated position when ADS-B is unavailable). The panel shows:
-
 - Live countdown to the next prayer
 - All six daily times: Fajr, Sunrise, Dhuhr, Asr, Maghrib, Isha
-- Five calculation methods selectable via dropdown: **MWL**, **ISNA**, **Egypt**, **Makkah (Umm Al-Qura)**, **Karachi**
-- Selected method persists in `localStorage` across page refreshes
+- Five calculation methods: MWL, ISNA, Egypt, Makkah (Umm Al-Qura), Karachi
+- Selected method persisted in localStorage
+
+### Local Time at Aircraft
+
+- Live ticking clock (HH:MM:SS) at the plane's current GPS position
+- Uses the **Google Maps Timezone API** for DST-aware exact timezone resolution (e.g. UTC+5:30 for India)
+- Timezone name shown as sub-label (e.g. "Asia/Kolkata")
+- Position cached — API only re-queried when aircraft moves more than 0.5 degrees
+
+### Correct Local Airport Times
+
+- All departure and arrival times displayed in the **airport's local timezone** (not UTC)
+- UTC times shown as secondary sub-labels for reference
+- AirLabs local fields (`dep_time`, `arr_time`) used as primary display
 
 ### Smart Position Fallback
 
-When the aircraft is not broadcasting ADS-B data, the tracker automatically estimates the current position using great-circle interpolation at the known route completion percentage. All panels remain active with a clear **"⚠ Est. Position"** badge.
+When ADS-B is unavailable, position is estimated via great-circle interpolation. All panels remain active with a clear "Est. Position" badge.
 
-### Other
+### Arrival Detection and Arrival Summary
 
-- Auto-refresh every **15 minutes** (rate-limit friendly — ~2 API calls per refresh)
-- Circular countdown timer showing time until next refresh
-- Shareable deep-link URLs: `/track/QR726`
-- Share button copies the full URL to clipboard
-- All API keys stored **exclusively server-side** — never exposed to the browser
-- 54 unit tests covering prayer calculation, flight router, map geometry, and weather
+- Landing detected from AirLabs (`status = "landed"`) or FR24 (`flight_ended = true`)
+- All API polling stops immediately on landing
+- Green **Arrival Banner** shows: actual arrival time (local + UTC), baggage belt, terminal, gate, runway
+- Full **Arrival Summary** card shows: scheduled vs actual times, delays, duration, distance, prayers during flight
+- Prayer count and names computed server-side from the actual departure-to-arrival UTC window
+- Polling resumes only when a new flight number is entered
+
+### Flight History and Prayer Log
+
+- All completed flights saved permanently to MySQL
+- Dedicated **/history page** with a paginated, sortable table of all tracked flights
+- Sortable by: date, departure airport, arrival airport, prayer count, arrival delay, distance, duration
+- Configurable page size: 10 / 20 / 50 rows
+- Each row shows: flight, route, prayers (with names on hover), times, delay badge, duration, distance, aircraft, baggage belt
+- Click any row to re-open that flight in the tracker
+- Recent flights chips (last 10) on the home screen for quick access
+
+### API Quota Display
+
+- AirLabs: calls used this month / monthly limit / hourly limit shown in the footer
+- FR24: credits remaining and credits consumed per call shown in the footer
 
 ---
 
@@ -58,11 +84,12 @@ When the aircraft is not broadcasting ADS-B data, the tracker automatically esti
 | Frontend | React 19, Vite 7, Tailwind CSS 4, shadcn/ui |
 | Backend | Node.js 22, Express 4, tRPC 11 |
 | Database | MySQL 8 via Drizzle ORM |
-| Map | Leaflet + react-leaflet (CartoDB Dark Matter tiles — no API key required) |
+| Map | Leaflet + react-leaflet (CartoDB Dark Matter tiles) |
 | Flight Data | AirLabs REST API (primary), Flightradar24 REST API (secondary) |
 | Weather | Open-Meteo pressure-level forecast API (free, no key required) |
+| Timezone | Google Maps Timezone API (DST-aware, via Manus proxy) |
 | Prayer Calc | Custom astronomical algorithm (MWL / ISNA / Egypt / Makkah / Karachi) |
-| Testing | Vitest |
+| Testing | Vitest (61 tests) |
 | Container | Docker (multi-stage build), Docker Compose |
 
 ---
@@ -71,48 +98,45 @@ When the aircraft is not broadcasting ADS-B data, the tracker automatically esti
 
 | Requirement | Notes |
 |---|---|
-| **Docker ≥ 24** + **Docker Compose ≥ 2.20** | For the recommended containerised setup |
-| **Node.js ≥ 22** + **pnpm ≥ 10** | For local development without Docker |
-| **AirLabs API key** | **Required.** Sign up free at [airlabs.co](https://airlabs.co). Free tier: 1 000 requests/month. |
-| **FR24 API key** | *Optional.* Enables the FR24 Operations panel. Contact [Flightradar24](https://www.flightradar24.com/premium/) for API access. |
+| Docker >= 24 and Docker Compose >= 2.20 | For the recommended containerised setup |
+| Node.js >= 22 and pnpm >= 10 | For local development without Docker |
+| AirLabs API key | Required. Sign up free at airlabs.co. Free tier: 1,000 requests/month. |
+| FR24 API key | Optional. Enables the FR24 Operations panel. |
 
 ---
 
-## Quick Start — Docker Compose (Recommended)
+## Quick Start with Docker Compose (Recommended)
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/YOUR_USERNAME/universal-flight-prayer-tracker.git
+git clone https://github.com/bhusain966/universal-flight-prayer-tracker.git
 cd universal-flight-prayer-tracker
 
 # 2. Copy the environment template and fill in your values
 cp .env.example .env
-# Open .env in your editor and set at minimum:
-#   AIRLABS_API_KEY   — your AirLabs key
-#   JWT_SECRET        — a long random string
+# Edit .env and set at minimum:
+#   AIRLABS_API_KEY   your AirLabs key
+#   JWT_SECRET        a long random string (min 32 chars)
 
 # 3. Build and start all services (app + MySQL database)
 docker compose up --build
 
-# 4. Open the tracker in your browser
+# 4. Open the tracker
 open http://localhost:3000
 ```
 
-The first build takes 2–4 minutes. Subsequent starts are fast because Docker caches the dependency layer.
-
-**Run in the background:**
+Run in the background:
 
 ```bash
 docker compose up --build -d
-docker compose logs -f app     # tail application logs
-docker compose logs -f db      # tail database logs
+docker compose logs -f app
 ```
 
-**Stop:**
+Stop:
 
 ```bash
-docker compose down            # stop containers, keep database volume
-docker compose down -v         # stop containers AND delete database volume
+docker compose down          # keep database volume
+docker compose down -v       # also delete database volume
 ```
 
 ---
@@ -121,34 +145,30 @@ docker compose down -v         # stop containers AND delete database volume
 
 ```bash
 # 1. Install Node.js 22 and pnpm
-#    https://nodejs.org  |  https://pnpm.io/installation
 
 # 2. Clone and install dependencies
-git clone https://github.com/YOUR_USERNAME/universal-flight-prayer-tracker.git
+git clone https://github.com/bhusain966/universal-flight-prayer-tracker.git
 cd universal-flight-prayer-tracker
 pnpm install
 
-# 3. Spin up a MySQL 8 database (example using Docker for just the database)
-docker run -d \
-  --name flight_db \
+# 3. Start a MySQL 8 database
+docker run -d --name flight_db \
   -e MYSQL_ROOT_PASSWORD=rootpassword \
   -e MYSQL_DATABASE=flighttracker \
   -e MYSQL_USER=flightuser \
   -e MYSQL_PASSWORD=flightpassword \
-  -p 3306:3306 \
-  mysql:8.0
+  -p 3306:3306 mysql:8.0
 
 # 4. Configure environment variables
 cp .env.example .env
-# Edit .env — set DATABASE_URL, AIRLABS_API_KEY, and JWT_SECRET at minimum
+# Edit .env with DATABASE_URL, AIRLABS_API_KEY, JWT_SECRET
 
 # 5. Apply the database schema
-pnpm db:push
+pnpm drizzle-kit generate
+# Apply the generated SQL via your MySQL client
 
 # 6. Start the development server
 pnpm dev
-
-# 7. Open the tracker
 open http://localhost:3000
 ```
 
@@ -162,28 +182,26 @@ Copy `.env.example` to `.env` and configure the following.
 
 | Variable | Description |
 |---|---|
-| `DATABASE_URL` | MySQL connection string. Format: `mysql://USER:PASSWORD@HOST:PORT/DATABASE` |
-| `JWT_SECRET` | Long random string for session cookie signing. Generate: `node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"` |
-| `AIRLABS_API_KEY` | Your AirLabs API key. |
+| `DATABASE_URL` | MySQL connection string: `mysql://USER:PASSWORD@HOST:PORT/DATABASE` |
+| `JWT_SECRET` | Random string for session cookie signing (min 32 chars) |
+| `AIRLABS_API_KEY` | AirLabs API key |
 
 ### Optional but Recommended
 
 | Variable | Description |
 |---|---|
-| `FR24_API_KEY` | Flightradar24 API key. Enables the FR24 Operations panel. |
+| `FR24_API_KEY` | Flightradar24 API key — enables the FR24 Operations panel |
 
 ### Docker Compose Database Variables
-
-These initialise the MySQL container and must match the credentials in `DATABASE_URL`.
 
 | Variable | Default | Description |
 |---|---|---|
 | `MYSQL_ROOT_PASSWORD` | `rootpassword` | MySQL root password |
 | `MYSQL_DATABASE` | `flighttracker` | Database name |
-| `MYSQL_USER` | `flightuser` | Application database user |
-| `MYSQL_PASSWORD` | `flightpassword` | Application database password |
+| `MYSQL_USER` | `flightuser` | Application user |
+| `MYSQL_PASSWORD` | `flightpassword` | Application password |
 
-### Manus Platform Variables (Self-hosted: leave blank)
+### Manus Platform Variables (leave blank for self-hosted)
 
 | Variable | Description |
 |---|---|
@@ -192,7 +210,7 @@ These initialise the MySQL container and must match the credentials in `DATABASE
 | `VITE_OAUTH_PORTAL_URL` | Manus login portal URL |
 | `OWNER_OPEN_ID` | Owner's Manus Open ID |
 | `OWNER_NAME` | Owner's display name |
-| `BUILT_IN_FORGE_API_URL` | Manus built-in API URL (server-side) |
+| `BUILT_IN_FORGE_API_URL` | Manus built-in API URL (server-side; includes maps/timezone proxy) |
 | `BUILT_IN_FORGE_API_KEY` | Manus built-in API key (server-side) |
 | `VITE_FRONTEND_FORGE_API_KEY` | Manus built-in API key (frontend) |
 | `VITE_FRONTEND_FORGE_API_URL` | Manus built-in API URL (frontend) |
@@ -201,19 +219,43 @@ These initialise the MySQL container and must match the credentials in `DATABASE
 
 ## Database Schema
 
-The application uses a single `users` table for authentication. The schema is applied automatically via Docker Compose or manually via `pnpm db:push`.
+Two tables are used. `users` is created automatically by Manus OAuth. `flight_history` stores the permanent flight log:
 
 ```sql
-CREATE TABLE `users` (
-  `id`            INT AUTO_INCREMENT PRIMARY KEY,
-  `openId`        VARCHAR(64) NOT NULL UNIQUE,
-  `name`          TEXT,
-  `email`         VARCHAR(320),
-  `loginMethod`   VARCHAR(64),
-  `role`          ENUM('user', 'admin') NOT NULL DEFAULT 'user',
-  `createdAt`     TIMESTAMP NOT NULL DEFAULT (now()),
-  `updatedAt`     TIMESTAMP NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
-  `lastSignedIn`  TIMESTAMP NOT NULL DEFAULT (now())
+CREATE TABLE flight_history (
+  id                INT AUTO_INCREMENT PRIMARY KEY,
+  flightIata        VARCHAR(16) NOT NULL,
+  flightIcao        VARCHAR(16),
+  airlineName       VARCHAR(128),
+  airlineIata       VARCHAR(8),
+  aircraft          VARCHAR(64),
+  regNumber         VARCHAR(16),
+  depIata           VARCHAR(8),
+  depCity           VARCHAR(64),
+  arrIata           VARCHAR(8),
+  arrCity           VARCHAR(64),
+  scheduledDepUtc   VARCHAR(32),
+  actualDepUtc      VARCHAR(32),
+  scheduledArrUtc   VARCHAR(32),
+  actualArrUtc      VARCHAR(32),
+  scheduledDepLocal VARCHAR(32),
+  actualDepLocal    VARCHAR(32),
+  scheduledArrLocal VARCHAR(32),
+  actualArrLocal    VARCHAR(32),
+  depDelayMin       INT,
+  arrDelayMin       INT,
+  durationMin       INT,
+  actualDurationMin INT,
+  distanceKm        INT,
+  baggageBelt       VARCHAR(16),
+  arrTerminal       VARCHAR(16),
+  arrGate           VARCHAR(16),
+  runwayLanded      VARCHAR(16),
+  prayerCount       INT DEFAULT 0,
+  prayerNames       TEXT,
+  prayerDetails     TEXT,
+  trackedAt         TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updatedAt         TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 ```
 
@@ -221,43 +263,46 @@ CREATE TABLE `users` (
 
 ## API Rate Limits
 
-The tracker is designed to be rate-limit friendly. Auto-refresh fires every **15 minutes**.
+Auto-refresh fires every 15 minutes and stops completely once the flight lands.
 
 | API | Calls per lookup | Notes |
 |---|---|---|
-| AirLabs `/flight` | 1 | Schedule, aircraft metadata |
-| AirLabs `/flights` | 1 | Live ADS-B telemetry |
-| AirLabs `/airports` | 0–2 | Fallback only when coords missing |
+| AirLabs /flight | 1 | Schedule, aircraft metadata, local times |
+| AirLabs /flights | 1 | Live ADS-B telemetry |
+| AirLabs /airports | 0-2 | Fallback only when coords missing |
 | FR24 | 1 | Optional; graceful fallback if unavailable |
 | Open-Meteo | 1 | Free, no key, no rate limit |
+| Google Maps Timezone | 0-1 | Only when aircraft moves > 0.5 degrees |
 
-Tracking one 14-hour long-haul flight end-to-end consumes approximately **112 AirLabs calls**.
+Tracking one 14-hour long-haul flight end-to-end consumes approximately 112 AirLabs calls.
 
 ---
 
 ## Project Structure
 
 ```
-.
-├── client/                        # React 19 frontend (Vite)
-│   └── src/
-│       ├── components/
-│       │   ├── FlightMap.tsx      # Leaflet map with geodesic route arc
-│       │   └── PrayerPanel.tsx    # Prayer times + method selector dropdown
-│       └── pages/
-│           └── Home.tsx           # Main flight tracker page
-├── server/                        # Express 4 + tRPC 11 backend
-│   ├── airlabs.ts                 # AirLabs API service
-│   ├── fr24.ts                    # Flightradar24 API service
-│   ├── weather.ts                 # Open-Meteo weather service
-│   ├── prayer.ts                  # Islamic prayer time calculations
-│   └── routers/
-│       └── flight.ts              # tRPC flight lookup + prayer procedures
-├── drizzle/                       # Database schema and migrations
-├── shared/                        # Shared types and constants
-├── Dockerfile                     # Multi-stage production build
-├── docker-compose.yml             # App + MySQL services
-└── README.md
+client/
+  src/
+    components/
+      FlightMap.tsx        Leaflet map with geodesic route arc
+      PrayerPanel.tsx      Prayer times + method selector
+    pages/
+      Home.tsx             Main flight tracker page
+      History.tsx          /history paginated flight log
+server/
+  airlabs.ts               AirLabs API service
+  fr24.ts                  Flightradar24 API service
+  weather.ts               Open-Meteo weather service
+  prayer.ts                Islamic prayer time calculations
+  db.ts                    Drizzle query helpers (incl. paginated history)
+  routers/
+    flight.ts              tRPC procedures: lookup, saveHistory, historyList,
+                           recentFlights, flightPrayerSummary, timezone, prayerTimes
+drizzle/
+  schema.ts                Database tables (users, flight_history)
+  migrations/              Generated SQL migrations
+Dockerfile                 Multi-stage production build
+docker-compose.yml         App + MySQL services
 ```
 
 ---
@@ -268,37 +313,32 @@ Tracking one 14-hour long-haul flight end-to-end consumes approximately **112 Ai
 pnpm test
 ```
 
-The test suite (54 tests) covers prayer calculation for all 5 methods, flight router response shape and datetime normalisation, great-circle geometry and antimeridian unwrapping, weather pressure-level selection, and authentication logout.
+The test suite (61 tests) covers prayer calculation for all 5 methods, flight router response shape and datetime normalisation, great-circle geometry and antimeridian unwrapping, weather pressure-level selection, arrival detection logic, AirLabs/FR24 quota field extraction, and authentication logout.
 
 ---
 
 ## Deployment
 
+### Manus (recommended)
+
+Click the Publish button in the Manus Management UI after creating a checkpoint. Custom domains are supported.
+
 ### Docker (Self-hosted)
 
-The `Dockerfile` uses a three-stage build (`deps → builder → runner`) producing a lean image based on `node:22-alpine`.
-
 ```bash
-# Build the image
 docker build -t flight-prayer-tracker .
-
-# Run with an environment file
-docker run -d \
-  -p 3000:3000 \
-  --env-file .env \
-  --name flight_tracker \
-  flight-prayer-tracker
+docker run -d -p 3000:3000 --env-file .env --name flight_tracker flight-prayer-tracker
 ```
 
 ### Cloud Platforms
 
 | Platform | Notes |
 |---|---|
-| **Railway** | Connect the GitHub repo; add env vars in the Railway dashboard. MySQL addon available. |
-| **Render** | Create a Web Service; point at the repo; set env vars. Use Render's managed MySQL. |
-| **Fly.io** | `fly launch` auto-detects the Dockerfile. `fly postgres create` for the database. |
-| **AWS ECS** | Push image to ECR; deploy as Fargate task. Use RDS MySQL for the database. |
-| **Google Cloud Run** | Push to Artifact Registry; deploy as a Cloud Run service. Use Cloud SQL MySQL. |
+| Railway | Connect the GitHub repo; add env vars in the dashboard. MySQL addon available. |
+| Render | Create a Web Service; point at the repo; set env vars. Use Render's managed MySQL. |
+| Fly.io | `fly launch` auto-detects the Dockerfile. `fly postgres create` for the database. |
+| AWS ECS | Push image to ECR; deploy as Fargate task. Use RDS MySQL. |
+| Google Cloud Run | Push to Artifact Registry; deploy as Cloud Run service. Use Cloud SQL MySQL. |
 
 ---
 
@@ -306,11 +346,11 @@ docker run -d \
 
 | Method | Fajr Angle | Isha Rule | Primary Region |
 |---|---|---|---|
-| **MWL** — Muslim World League | 18° | 17° | Europe, Far East, parts of Americas |
-| **ISNA** — Islamic Society of North America | 15° | 15° | North America |
-| **Egypt** — Egyptian General Authority | 19.5° | 17.5° | Africa, Syria, Lebanon, Malaysia |
-| **Makkah** — Umm Al-Qura University | 18.5° | 90 min after Maghrib | Arabian Peninsula |
-| **Karachi** — University of Islamic Sciences | 18° | 18° | Pakistan, Afghanistan, Bangladesh, India |
+| MWL - Muslim World League | 18 degrees | 17 degrees | Europe, Far East, parts of Americas |
+| ISNA - Islamic Society of North America | 15 degrees | 15 degrees | North America |
+| Egypt - Egyptian General Authority | 19.5 degrees | 17.5 degrees | Africa, Syria, Lebanon, Malaysia |
+| Makkah - Umm Al-Qura University | 18.5 degrees | 90 min after Maghrib | Arabian Peninsula |
+| Karachi - University of Islamic Sciences | 18 degrees | 18 degrees | Pakistan, Afghanistan, Bangladesh, India |
 
 ---
 
@@ -336,6 +376,7 @@ MIT License. See [LICENSE](LICENSE) for details.
 ## Acknowledgements
 
 - Flight data: [AirLabs](https://airlabs.co) and [Flightradar24](https://www.flightradar24.com)
-- Weather data: [Open-Meteo](https://open-meteo.com) (free, open-source)
+- Weather data: [Open-Meteo](https://open-meteo.com)
 - Map tiles: [CartoDB Dark Matter](https://carto.com/basemaps/)
+- Timezone data: [Google Maps Timezone API](https://developers.google.com/maps/documentation/timezone)
 - Prayer time algorithm: based on [PrayTimes.org](http://praytimes.org/calculation)

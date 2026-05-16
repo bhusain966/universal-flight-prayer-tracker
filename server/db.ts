@@ -1,4 +1,4 @@
-import { desc, eq, sql } from "drizzle-orm";
+import { asc, desc, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, users, flightHistory, InsertFlightHistory } from "../drizzle/schema";
 import { ENV } from './_core/env';
@@ -165,5 +165,39 @@ export async function getFlightHistoryCount(): Promise<number> {
     return Number(rows[0]?.count ?? 0);
   } catch {
     return 0;
+  }
+}
+
+export type HistorySortField = "trackedAt" | "depIata" | "arrIata" | "prayerCount" | "arrDelayMin" | "distanceKm" | "actualDurationMin";
+export type SortOrder = "asc" | "desc";
+
+/**
+ * Return a paginated, sortable list of flight history records.
+ * @param page  1-indexed page number
+ * @param pageSize  rows per page (max 100)
+ * @param sortBy  column to sort by
+ * @param order  'asc' | 'desc'
+ */
+export async function getFlightHistoryPaginated(
+  page: number,
+  pageSize: number,
+  sortBy: HistorySortField = "trackedAt",
+  order: SortOrder = "desc",
+): Promise<{ rows: typeof flightHistory.$inferSelect[]; total: number }> {
+  const db = await getDb();
+  if (!db) return { rows: [], total: 0 };
+  try {
+    const col = flightHistory[sortBy];
+    const orderFn = order === "asc" ? asc(col) : desc(col);
+    const offset = (page - 1) * pageSize;
+
+    const [rows, countRows] = await Promise.all([
+      db.select().from(flightHistory).orderBy(orderFn).limit(pageSize).offset(offset),
+      db.select({ count: sql<number>`count(*)` }).from(flightHistory),
+    ]);
+    return { rows, total: Number(countRows[0]?.count ?? 0) };
+  } catch (error) {
+    console.error("[Database] Failed to fetch paginated flight history:", error);
+    return { rows: [], total: 0 };
   }
 }
