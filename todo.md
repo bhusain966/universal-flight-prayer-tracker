@@ -183,3 +183,8 @@
 - [x] Fix fr24FullTracking: IATA lookup returned no live results because FR24 live endpoint needs ICAO callsign
 - [x] Added deriveCallsignCandidates() with 80+ IATA→ICAO mappings; retries live lookup by callsign (e.g. QTR1188) when IATA fails
 - [x] positionIsEstimated is now false when FR24 returns real ADS-B coordinates via callsign lookup
+
+## Round 23 — ADS-B badge + callsign in Operations panel
+- [x] Confirmed QR1188 live: lat 25.483, lng 51.871, alt 13050ft, gspeed 376km/h, callsign QTR1188, positionIsEstimated=false
+- [x] AirLabs mode header badge updated from "Live" to "ADS-B Live"
+- [x] FR24 mode: squawk, ICAO hex, ADS-B source, FR24 ID added to Operations panel and fr24FullTracking return object

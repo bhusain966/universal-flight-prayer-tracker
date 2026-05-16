@@ -879,11 +879,11 @@ export default function Home() {
             {!isLanded && hasLiveTelemetry ? (
               <div className="flex items-center gap-1.5">
                 <div className="pulse-dot" />
-                <span className="text-xs text-muted-foreground hidden sm:inline">Live</span>
+                <span className="text-xs text-muted-foreground hidden sm:inline">ADS-B Live</span>
               </div>
             ) : !isLanded && positionIsEstimated ? (
               <div className="flex items-center gap-1.5">
-                <span className="text-xs text-amber-400/80">⚠ Est. Position</span>
+                <span className="text-xs text-amber-400/80">⚠ Estimated</span>
               </div>
             ) : null}
           </div>
@@ -1391,11 +1391,15 @@ export default function Home() {
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-px bg-border">
                     {[
                       { label: 'Callsign', value: f.callsign },
+                      { label: 'Squawk', value: f.squawk },
+                      { label: 'ICAO Hex', value: f.hex },
+                      { label: 'ADS-B Source', value: f.adsSource },
                       { label: 'Takeoff Runway', value: f.runwayTakeoff },
                       { label: 'Landing Runway', value: f.runwayLanded },
                       { label: 'Takeoff Time', value: f.datetimeTakeoff ? fmtUtc(f.datetimeTakeoff) : null },
                       { label: 'Landing Time', value: f.datetimeLanded ? fmtUtc(f.datetimeLanded) : null },
                       { label: 'Distance Flown', value: f.actualDistanceKm ? `${f.actualDistanceKm.toLocaleString()} km` : null },
+                      { label: 'FR24 ID', value: f.fr24Id },
                     ].filter(r => r.value != null).map(({ label, value }) => (
                       <div key={label} className="bg-card px-4 py-3 flex flex-col gap-0.5">
                         <span className="avi-label">{label}</span>
