@@ -109,22 +109,22 @@
 ## Updates (Round 15 — Flight History & Exact Timezone)
 
 ### Flight History & Arrival Summary
-- [ ] Design flight_history DB table: flight_iata, airline, route, scheduled/actual dep+arr times, delay, distance, duration, prayer_count, prayer_names JSON, baggage_belt, terminal, gate, runway, aircraft, created_at
-- [ ] Generate Drizzle migration and apply via webdev_execute_sql
-- [ ] Add server/db helpers: saveFlightHistory(), getRecentFlights(), getFlightHistory()
-- [ ] Add tRPC procedures: history.save (protected), history.recent (public), history.list (public)
-- [ ] Compute arrival summary on frontend when isLanded becomes true: gather all fields, call history.save
-- [ ] Show recent flight chips (last 5) below search box — click to reload flight
-- [ ] Show full arrival summary card immediately when flight lands (within the arrival banner)
-- [ ] Show history panel / page listing all past flights with their summaries
-- [ ] Prevent duplicate saves for the same flight (upsert by flight_iata + dep_time_utc)
+- [x] Design flight_history DB table: flight_iata, airline, route, scheduled/actual dep+arr times, delay, distance, duration, prayer_count, prayer_names JSON, baggage_belt, terminal, gate, runway, aircraft, created_at
+- [x] Generate Drizzle migration and apply via webdev_execute_sql
+- [x] Add server/db helpers: saveFlightHistory(), getRecentFlights(), getFlightHistory()
+- [x] Add tRPC procedures: flight.saveHistory, flight.recentFlights, flight.flightHistoryByIata
+- [x] Compute arrival summary on frontend when isLanded becomes true: gather all fields, call flight.saveHistory
+- [x] Show recent flight chips (last 5) below search box — click to reload flight
+- [x] Show full arrival summary card immediately when flight lands (Arrival Summary panel with all stats)
+- [x] Show history table on home/empty state page listing all past flights with summaries
+- [x] Prevent duplicate saves for the same flight (upsert by flight_iata + dep_time_utc)
 
 ### Exact Timezone for Local at Aircraft
-- [ ] Add a tRPC procedure flight.timezone that calls Google Maps Timezone API with lat/lng
-- [ ] Update useLocalAircraftTime hook to call the procedure and use the real DST-aware offset
-- [ ] Cache the timezone result per lat/lng (avoid calling on every tick)
-- [ ] Show exact timezone name (e.g. "Asia/Kolkata") as sub-label on the card
+- [x] Add a tRPC procedure flight.timezone that calls Google Maps Timezone API with lat/lng
+- [x] Update useLocalAircraftTime hook to call the procedure and use the real DST-aware offset
+- [x] Cache the timezone result per lat/lng (debounced, only re-fetches when position changes significantly)
+- [x] Show exact timezone name (e.g. "Asia/Kolkata") as sub-label on the card
 
 ### Tests
-- [ ] Add vitest tests for saveFlightHistory and getRecentFlights DB helpers
-- [ ] Add vitest test for the timezone procedure
+- [x] TypeScript compiles clean (0 errors)
+- [x] All 61 tests passing

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { publicProcedure, router } from "../_core/trpc";
 import { fetchFlightData } from "../airlabs";
 import { fetchFr24FlightData } from "../fr24";
-import { getPrayerTimesResult } from "../prayer";
+import { getPrayerTimesResult, calculatePrayerTimes } from "../prayer";
 import { fetchWeatherAtPosition } from "../weather";
 import { saveFlightHistory, getRecentFlights, getFlightHistoryByIata } from "../db";
 import { makeRequest } from "../_core/map";
@@ -310,6 +310,59 @@ export const flightRouter = router({
         const msg = err instanceof Error ? err.message : "Timezone lookup failed";
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: msg });
       }
+    }),
+
+  /**
+   * Compute which prayers occurred during a flight window.
+   * Takes dep/arr UTC ISO strings + a representative lat/lng (e.g. midpoint).
+   * Returns prayerCount, prayerNames (JSON array), and prayerDetails (JSON array of {name, utc}).
+   */
+  flightPrayerSummary: publicProcedure
+    .input(
+      z.object({
+        depUtc:  z.string(),
+        arrUtc:  z.string(),
+        lat:     z.number().min(-90).max(90),
+        lng:     z.number().min(-180).max(180),
+        method:  z.enum(["MWL", "ISNA", "Egypt", "Makkah", "Karachi"]).optional().default("MWL"),
+      })
+    )
+    .query(({ input }) => {
+      const depMs = new Date(input.depUtc).getTime();
+      const arrMs = new Date(input.arrUtc).getTime();
+      if (isNaN(depMs) || isNaN(arrMs) || arrMs <= depMs) {
+        return { prayerCount: 0, prayerNames: "[]", prayerDetails: "[]" };
+      }
+
+      const PRAYER_KEYS = ["fajr", "sunrise", "dhuhr", "asr", "maghrib", "isha"] as const;
+      const PRAYER_LABELS: Record<string, string> = {
+        fajr: "Fajr", sunrise: "Sunrise", dhuhr: "Dhuhr", asr: "Asr", maghrib: "Maghrib", isha: "Isha",
+      };
+
+      // Cover all UTC days that overlap with the flight window
+      const dayStart = new Date(depMs);
+      dayStart.setUTCHours(0, 0, 0, 0);
+      const dayEnd = new Date(arrMs);
+      dayEnd.setUTCHours(0, 0, 0, 0);
+
+      const prayersDuring: { name: string; utc: string }[] = [];
+      const cursor = new Date(dayStart);
+      while (cursor.getTime() <= dayEnd.getTime()) {
+        const times = calculatePrayerTimes(cursor, input.lat, input.lng, input.method);
+        for (const key of PRAYER_KEYS) {
+          const t = times[key].getTime();
+          if (t >= depMs && t <= arrMs) {
+            prayersDuring.push({ name: PRAYER_LABELS[key] ?? key, utc: times[key].toISOString() });
+          }
+        }
+        cursor.setUTCDate(cursor.getUTCDate() + 1);
+      }
+
+      return {
+        prayerCount:   prayersDuring.length,
+        prayerNames:   JSON.stringify(prayersDuring.map(p => p.name)),
+        prayerDetails: JSON.stringify(prayersDuring),
+      };
     }),
 
   /**

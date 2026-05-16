@@ -443,13 +443,13 @@ export default function Home() {
   const utils = trpc.useUtils();
 
   // Recent flights query — always loaded for chips
-  const { data: recentFlights } = trpc.flight.recentFlights.useQuery({ limit: 5 });
+  const { data: recentFlights } = trpc.flight.recentFlights.useQuery({ limit: 10 });
 
   // Auto-save flight history when landing is detected
   useEffect(() => {
     if (!data?.isLanded || historySaved || !data?.data?.flight) return;
     const f = data.data.flight;
-    const fr24 = data.fr24;
+    const fr24Data = data.fr24;
 
     // Compute dep/arr delay in minutes
     function diffMin(a?: string | null, b?: string | null): number | undefined {
@@ -460,20 +460,20 @@ export default function Home() {
       return isNaN(diff) ? undefined : diff;
     }
 
-    // Compute prayers during flight (past prayers between dep and arr)
-    // We use the prayer times already loaded in the panel at the current position
-    // For history we just store the count of prayers that fell between dep and arr
     const depUtc = f.dep_actual_utc ?? f.dep_time_utc;
-    const arrUtc = f.arr_actual_utc ?? f.arr_estimated_utc ?? f.arr_time_utc;
+    const arrUtc = f.arr_actual_utc ?? fr24Data?.datetimeLanded ?? f.arr_estimated_utc ?? f.arr_time_utc;
     const depMs = depUtc ? new Date(depUtc.includes('T') ? depUtc : depUtc.replace(' ', 'T') + 'Z').getTime() : null;
     const arrMs = arrUtc ? new Date(arrUtc.includes('T') ? arrUtc : arrUtc.replace(' ', 'T') + 'Z').getTime() : null;
 
-    // Compute actual duration in minutes
     const actualDurationMin = (depMs && arrMs && arrMs > depMs)
       ? Math.round((arrMs - depMs) / 60000)
       : undefined;
 
-    const record = {
+    // Use midpoint lat/lng for prayer calculation (or last known position)
+    const midLat = f.lat ?? data.data.depAirport?.lat ?? null;
+    const midLng = f.lng ?? data.data.depAirport?.lng ?? null;
+
+    const buildRecord = (prayerCount = 0, prayerNames?: string, prayerDetails?: string) => ({
       flightIata: f.flight_iata ?? flightIata ?? '',
       flightIcao: f.flight_icao ?? undefined,
       airlineName: f.airline_name ?? undefined,
@@ -487,32 +487,47 @@ export default function Home() {
       scheduledDepUtc: f.dep_time_utc ?? undefined,
       actualDepUtc: f.dep_actual_utc ?? undefined,
       scheduledArrUtc: f.arr_time_utc ?? undefined,
-      actualArrUtc: f.arr_actual_utc ?? fr24?.datetimeLanded ?? undefined,
+      actualArrUtc: f.arr_actual_utc ?? fr24Data?.datetimeLanded ?? undefined,
       scheduledDepLocal: f.dep_time ?? undefined,
       actualDepLocal: f.dep_actual ?? undefined,
       scheduledArrLocal: f.arr_time ?? undefined,
       actualArrLocal: f.arr_actual ?? undefined,
       depDelayMin: f.dep_delay ?? diffMin(f.dep_actual_utc, f.dep_time_utc),
-      arrDelayMin: f.arr_delay ?? diffMin(f.arr_actual_utc ?? fr24?.datetimeLanded, f.arr_time_utc),
+      arrDelayMin: f.arr_delay ?? diffMin(f.arr_actual_utc ?? fr24Data?.datetimeLanded, f.arr_time_utc),
       durationMin: f.duration ?? undefined,
       actualDurationMin,
-      distanceKm: fr24?.actualDistance ? Math.round(fr24.actualDistance) : undefined,
+      distanceKm: fr24Data?.actualDistance ? Math.round(fr24Data.actualDistance) : undefined,
       baggageBelt: f.arr_baggage != null ? String(f.arr_baggage) : undefined,
       arrTerminal: f.arr_terminal ?? undefined,
       arrGate: f.arr_gate ?? undefined,
-      runwayLanded: fr24?.runwayLanded ?? undefined,
-      prayerCount: 0, // will be updated by prayer panel if available
-      prayerNames: undefined as string | undefined,
-      prayerDetails: undefined as string | undefined,
-    };
+      runwayLanded: fr24Data?.runwayLanded ?? undefined,
+      prayerCount,
+      prayerNames,
+      prayerDetails,
+    });
 
     setHistorySaved(true);
-    saveHistory.mutate(record, {
-      onSuccess: () => {
-        // Refresh the recent flights list
-        utils.flight.recentFlights.invalidate();
-      },
-    });
+
+    // If we have dep/arr UTC and a position, compute prayers during flight server-side
+    if (depUtc && arrUtc && midLat != null && midLng != null) {
+      utils.client.flight.flightPrayerSummary
+        .query({ depUtc, arrUtc, lat: midLat, lng: midLng })
+        .then((ps) => {
+          saveHistory.mutate(buildRecord(ps.prayerCount, ps.prayerNames, ps.prayerDetails), {
+            onSuccess: () => utils.flight.recentFlights.invalidate(),
+          });
+        })
+        .catch(() => {
+          // Fall back to saving without prayer data
+          saveHistory.mutate(buildRecord(), {
+            onSuccess: () => utils.flight.recentFlights.invalidate(),
+          });
+        });
+    } else {
+      saveHistory.mutate(buildRecord(), {
+        onSuccess: () => utils.flight.recentFlights.invalidate(),
+      });
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data?.isLanded, historySaved]);
 
