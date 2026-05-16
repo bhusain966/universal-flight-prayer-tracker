@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
+import { InsertUser, users, flightHistory, InsertFlightHistory } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -89,4 +89,81 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-// TODO: add feature queries here as your schema grows.
+// ─── Flight History helpers ───────────────────────────────────────────────────
+
+/**
+ * Upsert a flight history record.
+ * Uniqueness key: flightIata + scheduledDepUtc (same leg = same record).
+ * If the flight was tracked before without a scheduledDepUtc, falls back to
+ * inserting a new row so we never silently drop data.
+ */
+export async function saveFlightHistory(record: InsertFlightHistory): Promise<number | null> {
+  const db = await getDb();
+  if (!db) {
+    console.warn("[Database] Cannot save flight history: database not available");
+    return null;
+  }
+  try {
+    // Build the update set (all columns except id, flightIata, trackedAt)
+    const updateSet: Partial<InsertFlightHistory> = { ...record };
+    delete (updateSet as Record<string, unknown>).id;
+    delete (updateSet as Record<string, unknown>).trackedAt;
+
+    const result = await db
+      .insert(flightHistory)
+      .values(record)
+      .onDuplicateKeyUpdate({ set: updateSet });
+
+    // MySQL returns insertId for new rows; for updates it may be 0
+    return (result as unknown as { insertId: number }).insertId ?? null;
+  } catch (error) {
+    console.error("[Database] Failed to save flight history:", error);
+    throw error;
+  }
+}
+
+/** Return the most recent N flight history records (newest first). */
+export async function getRecentFlights(limit = 10) {
+  const db = await getDb();
+  if (!db) return [];
+  try {
+    return await db
+      .select()
+      .from(flightHistory)
+      .orderBy(desc(flightHistory.trackedAt))
+      .limit(limit);
+  } catch (error) {
+    console.error("[Database] Failed to fetch recent flights:", error);
+    return [];
+  }
+}
+
+/** Return a single flight history record by flightIata (most recent match). */
+export async function getFlightHistoryByIata(flightIata: string) {
+  const db = await getDb();
+  if (!db) return null;
+  try {
+    const rows = await db
+      .select()
+      .from(flightHistory)
+      .where(eq(flightHistory.flightIata, flightIata))
+      .orderBy(desc(flightHistory.trackedAt))
+      .limit(1);
+    return rows[0] ?? null;
+  } catch (error) {
+    console.error("[Database] Failed to fetch flight history:", error);
+    return null;
+  }
+}
+
+/** Return total count of tracked flights. */
+export async function getFlightHistoryCount(): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  try {
+    const rows = await db.select({ count: sql<number>`count(*)` }).from(flightHistory);
+    return Number(rows[0]?.count ?? 0);
+  } catch {
+    return 0;
+  }
+}

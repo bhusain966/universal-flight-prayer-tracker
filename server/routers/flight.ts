@@ -5,6 +5,8 @@ import { fetchFlightData } from "../airlabs";
 import { fetchFr24FlightData } from "../fr24";
 import { getPrayerTimesResult } from "../prayer";
 import { fetchWeatherAtPosition } from "../weather";
+import { saveFlightHistory, getRecentFlights, getFlightHistoryByIata } from "../db";
+import { makeRequest } from "../_core/map";
 
 /**
  * Interpolate a position along the great-circle arc between two points.
@@ -199,6 +201,114 @@ export const flightRouter = router({
           code: "NOT_FOUND",
           message,
         });
+      }
+    }),
+
+  /**
+   * Save a completed flight to the permanent history database.
+   * Called from the frontend when isLanded becomes true.
+   */
+  saveHistory: publicProcedure
+    .input(
+      z.object({
+        flightIata:        z.string(),
+        flightIcao:        z.string().optional(),
+        airlineName:       z.string().optional(),
+        airlineIata:       z.string().optional(),
+        aircraft:          z.string().optional(),
+        regNumber:         z.string().optional(),
+        depIata:           z.string().optional(),
+        depCity:           z.string().optional(),
+        arrIata:           z.string().optional(),
+        arrCity:           z.string().optional(),
+        scheduledDepUtc:   z.string().optional(),
+        actualDepUtc:      z.string().optional(),
+        scheduledArrUtc:   z.string().optional(),
+        actualArrUtc:      z.string().optional(),
+        scheduledDepLocal: z.string().optional(),
+        actualDepLocal:    z.string().optional(),
+        scheduledArrLocal: z.string().optional(),
+        actualArrLocal:    z.string().optional(),
+        depDelayMin:       z.number().int().optional(),
+        arrDelayMin:       z.number().int().optional(),
+        durationMin:       z.number().int().optional(),
+        actualDurationMin: z.number().int().optional(),
+        distanceKm:        z.number().int().optional(),
+        baggageBelt:       z.string().optional(),
+        arrTerminal:       z.string().optional(),
+        arrGate:           z.string().optional(),
+        runwayLanded:      z.string().optional(),
+        prayerCount:       z.number().int().optional(),
+        prayerNames:       z.string().optional(), // JSON string
+        prayerDetails:     z.string().optional(), // JSON string
+      })
+    )
+    .mutation(async ({ input }) => {
+      try {
+        const id = await saveFlightHistory(input);
+        return { success: true, id };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Failed to save flight history";
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: msg });
+      }
+    }),
+
+  /**
+   * Return the most recent N tracked flights (for chips + history panel).
+   */
+  recentFlights: publicProcedure
+    .input(z.object({ limit: z.number().int().min(1).max(50).default(10) }))
+    .query(async ({ input }) => {
+      const rows = await getRecentFlights(input.limit);
+      return rows;
+    }),
+
+  /**
+   * Return the most recent history record for a specific flight IATA.
+   * Used to show a previous arrival summary when the user re-opens a flight.
+   */
+  flightHistoryByIata: publicProcedure
+    .input(z.object({ flightIata: z.string() }))
+    .query(async ({ input }) => {
+      const row = await getFlightHistoryByIata(input.flightIata.trim().toUpperCase());
+      return row ?? null;
+    }),
+
+  /**
+   * Resolve the exact DST-aware timezone for a lat/lng using the Google Maps
+   * Timezone API (proxied through the Manus map helper).
+   * Returns { timeZoneId, timeZoneName, rawOffset, dstOffset, totalOffsetSec }.
+   */
+  timezone: publicProcedure
+    .input(z.object({ lat: z.number(), lng: z.number() }))
+    .query(async ({ input }) => {
+      try {
+        const timestamp = Math.floor(Date.now() / 1000);
+        // Use the Manus Maps proxy: makeRequest(endpoint, params)
+        const res = await makeRequest<{
+          status: string;
+          timeZoneId: string;
+          timeZoneName: string;
+          rawOffset: number;
+          dstOffset: number;
+          errorMessage?: string;
+        }>("/maps/api/timezone/json", {
+          location: `${input.lat},${input.lng}`,
+          timestamp,
+        });
+        if (res.status !== "OK") {
+          throw new Error(res.errorMessage ?? `Timezone API error: ${res.status}`);
+        }
+        return {
+          timeZoneId:     res.timeZoneId,
+          timeZoneName:   res.timeZoneName,
+          rawOffset:      res.rawOffset,
+          dstOffset:      res.dstOffset,
+          totalOffsetSec: res.rawOffset + res.dstOffset,
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Timezone lookup failed";
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: msg });
       }
     }),
 

@@ -84,39 +84,65 @@ function LocalTimeDisplay({ localRaw, utcRaw }: { localRaw?: string | null; utcR
 }
 
 /**
- * Derive the approximate UTC offset (in whole hours) from a longitude.
- * Uses the standard solar-time formula: offset = round(lng / 15).
- * This matches the same approach used in server/prayer.ts for prayer calculations.
- */
-function lngToUtcOffsetHours(lng: number): number {
-  return Math.round(lng / 15);
-}
-
-/**
  * Live clock hook: returns the current local time string (HH:MM:SS) and UTC offset label
- * at the given longitude. Ticks every second. Returns null when lng is unavailable.
+ * at the given lat/lng. Uses the Google Maps Timezone API for DST-aware offsets.
+ * Falls back to longitude/15 solar-time estimate while the API call is in flight.
+ * Ticks every second. Returns null when position is unavailable.
  */
-function useLocalAircraftTime(lng?: number | null): { time: string; offsetLabel: string } | null {
-  const offsetHours = useMemo(() => (lng != null ? lngToUtcOffsetHours(lng) : null), [lng]);
-  const [tick, setTick] = useState(0);
+function useLocalAircraftTime(
+  lng?: number | null,
+  lat?: number | null,
+): { time: string; offsetLabel: string; tzName?: string } | null {
+  // Stable reference for the timezone query input
+  const [tzInput, setTzInput] = useState<{ lat: number; lng: number } | null>(null);
+  useEffect(() => {
+    if (lat != null && lng != null) {
+      // Only update when position changes significantly (>0.5 deg) to avoid hammering the API
+      setTzInput(prev => {
+        if (!prev) return { lat, lng };
+        if (Math.abs(prev.lat - lat) > 0.5 || Math.abs(prev.lng - lng) > 0.5) return { lat, lng };
+        return prev;
+      });
+    }
+  }, [lat, lng]);
 
+  const { data: tzData } = trpc.flight.timezone.useQuery(
+    { lat: tzInput?.lat ?? 0, lng: tzInput?.lng ?? 0 },
+    {
+      enabled: tzInput != null,
+      staleTime: 30 * 60 * 1000, // cache for 30 min — timezone rarely changes mid-flight
+      retry: 1,
+    }
+  );
+
+  const [tick, setTick] = useState(0);
   useEffect(() => {
     const id = setInterval(() => setTick(t => t + 1), 1000);
     return () => clearInterval(id);
   }, []);
 
-  if (offsetHours == null) return null;
+  if (lng == null) return null;
 
+  // Use real DST-aware offset from API; fall back to solar-time estimate
+  const totalOffsetSec = tzData?.totalOffsetSec ?? Math.round(lng / 15) * 3600;
   const now = new Date();
-  const localMs = now.getTime() + offsetHours * 3600 * 1000;
+  const localMs = now.getTime() + totalOffsetSec * 1000;
   const local = new Date(localMs);
   const hh = String(local.getUTCHours()).padStart(2, "0");
   const mm = String(local.getUTCMinutes()).padStart(2, "0");
   const ss = String(local.getUTCSeconds()).padStart(2, "0");
+  const offsetHours = totalOffsetSec / 3600;
   const sign = offsetHours >= 0 ? "+" : "";
-  // Suppress lint warning — tick is intentionally used to force re-render each second
+  const offsetFmt = Number.isInteger(offsetHours)
+    ? `UTC${sign}${offsetHours}`
+    : `UTC${sign}${Math.floor(offsetHours)}:${String(Math.round((Math.abs(offsetHours) % 1) * 60)).padStart(2, "0")}`;
+  // Suppress lint warning — tick forces re-render each second
   void tick;
-  return { time: `${hh}:${mm}:${ss}`, offsetLabel: `UTC${sign}${offsetHours}` };
+  return {
+    time: `${hh}:${mm}:${ss}`,
+    offsetLabel: offsetFmt,
+    tzName: tzData?.timeZoneName,
+  };
 }
 
 function formatDuration(mins?: number | null): string {
@@ -381,6 +407,8 @@ export default function Home() {
 
   // Detect landed state from previous data so we can stop polling
   const [isLandedLocked, setIsLandedLocked] = useState(false);
+  // Track whether we have already saved this flight to history
+  const [historySaved, setHistorySaved] = useState(false);
 
   const { data, isLoading, error, refetch, isFetching } =
     trpc.flight.lookup.useQuery(
@@ -401,9 +429,92 @@ export default function Home() {
     }
   }, [data?.isLanded, isLandedLocked]);
 
+  // Reset history-saved flag when a new flight is searched
+  useEffect(() => {
+    setHistorySaved(false);
+  }, [flightIata]);
+
   useEffect(() => {
     if (data) setLastRefresh(new Date());
   }, [data]);
+
+  // Auto-save mutation — called once when flight lands
+  const saveHistory = trpc.flight.saveHistory.useMutation();
+  const utils = trpc.useUtils();
+
+  // Recent flights query — always loaded for chips
+  const { data: recentFlights } = trpc.flight.recentFlights.useQuery({ limit: 5 });
+
+  // Auto-save flight history when landing is detected
+  useEffect(() => {
+    if (!data?.isLanded || historySaved || !data?.data?.flight) return;
+    const f = data.data.flight;
+    const fr24 = data.fr24;
+
+    // Compute dep/arr delay in minutes
+    function diffMin(a?: string | null, b?: string | null): number | undefined {
+      if (!a || !b) return undefined;
+      const da = new Date(a.includes('T') ? a : a.replace(' ', 'T') + 'Z');
+      const db = new Date(b.includes('T') ? b : b.replace(' ', 'T') + 'Z');
+      const diff = Math.round((da.getTime() - db.getTime()) / 60000);
+      return isNaN(diff) ? undefined : diff;
+    }
+
+    // Compute prayers during flight (past prayers between dep and arr)
+    // We use the prayer times already loaded in the panel at the current position
+    // For history we just store the count of prayers that fell between dep and arr
+    const depUtc = f.dep_actual_utc ?? f.dep_time_utc;
+    const arrUtc = f.arr_actual_utc ?? f.arr_estimated_utc ?? f.arr_time_utc;
+    const depMs = depUtc ? new Date(depUtc.includes('T') ? depUtc : depUtc.replace(' ', 'T') + 'Z').getTime() : null;
+    const arrMs = arrUtc ? new Date(arrUtc.includes('T') ? arrUtc : arrUtc.replace(' ', 'T') + 'Z').getTime() : null;
+
+    // Compute actual duration in minutes
+    const actualDurationMin = (depMs && arrMs && arrMs > depMs)
+      ? Math.round((arrMs - depMs) / 60000)
+      : undefined;
+
+    const record = {
+      flightIata: f.flight_iata ?? flightIata ?? '',
+      flightIcao: f.flight_icao ?? undefined,
+      airlineName: f.airline_name ?? undefined,
+      airlineIata: f.airline_iata ?? undefined,
+      aircraft: f.model ?? f.aircraft_icao ?? undefined,
+      regNumber: f.reg_number ?? undefined,
+      depIata: f.dep_iata ?? undefined,
+      depCity: data.data.depAirport?.city ?? f.dep_city ?? undefined,
+      arrIata: f.arr_iata ?? undefined,
+      arrCity: data.data.arrAirport?.city ?? f.arr_city ?? undefined,
+      scheduledDepUtc: f.dep_time_utc ?? undefined,
+      actualDepUtc: f.dep_actual_utc ?? undefined,
+      scheduledArrUtc: f.arr_time_utc ?? undefined,
+      actualArrUtc: f.arr_actual_utc ?? fr24?.datetimeLanded ?? undefined,
+      scheduledDepLocal: f.dep_time ?? undefined,
+      actualDepLocal: f.dep_actual ?? undefined,
+      scheduledArrLocal: f.arr_time ?? undefined,
+      actualArrLocal: f.arr_actual ?? undefined,
+      depDelayMin: f.dep_delay ?? diffMin(f.dep_actual_utc, f.dep_time_utc),
+      arrDelayMin: f.arr_delay ?? diffMin(f.arr_actual_utc ?? fr24?.datetimeLanded, f.arr_time_utc),
+      durationMin: f.duration ?? undefined,
+      actualDurationMin,
+      distanceKm: fr24?.actualDistance ? Math.round(fr24.actualDistance) : undefined,
+      baggageBelt: f.arr_baggage != null ? String(f.arr_baggage) : undefined,
+      arrTerminal: f.arr_terminal ?? undefined,
+      arrGate: f.arr_gate ?? undefined,
+      runwayLanded: fr24?.runwayLanded ?? undefined,
+      prayerCount: 0, // will be updated by prayer panel if available
+      prayerNames: undefined as string | undefined,
+      prayerDetails: undefined as string | undefined,
+    };
+
+    setHistorySaved(true);
+    saveHistory.mutate(record, {
+      onSuccess: () => {
+        // Refresh the recent flights list
+        utils.flight.recentFlights.invalidate();
+      },
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data?.isLanded, historySaved]);
 
   const handleSearch = useCallback(() => {
     const val = inputValue.trim().toUpperCase();
@@ -451,8 +562,8 @@ export default function Home() {
   const etaIso = fr24?.etaIso ?? flight?.arr_estimated_utc ?? flight?.arr_time_utc;
   const totalDuration = flight?.duration ?? null;
 
-  // Live local time at aircraft position (ticks every second)
-  const localAircraftTime = useLocalAircraftTime(flight?.lng);
+  // Live local time at aircraft position (ticks every second, DST-aware via Maps Timezone API)
+  const localAircraftTime = useLocalAircraftTime(flight?.lng, flight?.lat);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -533,7 +644,7 @@ export default function Home() {
 
         {/* ── Empty state ── */}
         {!flightIata && (
-          <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6">
+          <div className="flex flex-col items-center justify-center min-h-[40vh] gap-6">
             <div className="w-20 h-20 rounded-2xl flex items-center justify-center"
               style={{ background: "oklch(0.72 0.18 55 / 0.08)", border: "1px solid oklch(0.72 0.18 55 / 0.2)" }}>
               <Plane className="w-10 h-10 text-primary/60" />
@@ -547,13 +658,134 @@ export default function Home() {
                 <span className="font-mono text-primary">BA117</span>) to load live data.
               </p>
             </div>
-            <div className="flex gap-2 flex-wrap justify-center">
-              {["QR726", "EK202", "BA117", "SQ321"].map((f) => (
-                <button key={f} onClick={() => { setInputValue(f); setFlightIata(f); navigate(`/track/${f}`); }}
-                  className="px-3 py-1.5 rounded-md text-xs font-mono border border-border text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors">
-                  {f}
-                </button>
-              ))}
+
+            {/* Recent flights chips */}
+            {recentFlights && recentFlights.length > 0 ? (
+              <div className="flex flex-col items-center gap-3 w-full max-w-lg">
+                <p className="text-xs text-muted-foreground uppercase tracking-wider">Recent Flights</p>
+                <div className="flex gap-2 flex-wrap justify-center">
+                  {recentFlights.map((rf) => (
+                    <button
+                      key={rf.id}
+                      onClick={() => { setInputValue(rf.flightIata); setFlightIata(rf.flightIata); navigate(`/track/${rf.flightIata}`); }}
+                      className="flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-mono border border-border text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors"
+                    >
+                      <Plane className="w-3 h-3" />
+                      <span className="font-semibold">{rf.flightIata}</span>
+                      {rf.depIata && rf.arrIata && (
+                        <span className="text-muted-foreground/60">{rf.depIata}→{rf.arrIata}</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="flex gap-2 flex-wrap justify-center">
+                {["QR726", "EK202", "BA117", "SQ321"].map((f) => (
+                  <button key={f} onClick={() => { setInputValue(f); setFlightIata(f); navigate(`/track/${f}`); }}
+                    className="px-3 py-1.5 rounded-md text-xs font-mono border border-border text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors">
+                    {f}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Flight History Table (shown on empty state when history exists) ── */}
+        {!flightIata && recentFlights && recentFlights.length > 0 && (
+          <div className="avi-panel">
+            <PanelHeader icon={<Clock className="w-3.5 h-3.5" />} title="Flight History" />
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-border/50 text-muted-foreground">
+                    <th className="text-left px-4 py-2 font-medium">Flight</th>
+                    <th className="text-left px-4 py-2 font-medium">Route</th>
+                    <th className="text-left px-4 py-2 font-medium">Dep (local)</th>
+                    <th className="text-left px-4 py-2 font-medium">Arr (local)</th>
+                    <th className="text-left px-4 py-2 font-medium">Dep delay</th>
+                    <th className="text-left px-4 py-2 font-medium">Arr delay</th>
+                    <th className="text-left px-4 py-2 font-medium">Duration</th>
+                    <th className="text-left px-4 py-2 font-medium">Distance</th>
+                    <th className="text-left px-4 py-2 font-medium">Prayers</th>
+                    <th className="text-left px-4 py-2 font-medium">Baggage</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentFlights.map((rf) => {
+                    const depDelay = rf.depDelayMin;
+                    const arrDelay = rf.arrDelayMin;
+                    const delayClass = (d: number | null | undefined) =>
+                      d == null ? "text-muted-foreground" : d > 0 ? "text-yellow-400" : d < 0 ? "text-green-400" : "text-green-400";
+                    const delayLabel = (d: number | null | undefined) =>
+                      d == null ? "—" : d > 0 ? `+${d}m` : d < 0 ? `${d}m (early)` : "On time";
+                    return (
+                      <tr
+                        key={rf.id}
+                        className="border-b border-border/30 hover:bg-card/50 cursor-pointer transition-colors"
+                        onClick={() => { setInputValue(rf.flightIata); setFlightIata(rf.flightIata); navigate(`/track/${rf.flightIata}`); }}
+                      >
+                        <td className="px-4 py-2.5">
+                          <span className="font-mono font-bold text-foreground">{rf.flightIata}</span>
+                          {rf.airlineName && <span className="block text-muted-foreground/60 text-[10px]">{rf.airlineName}</span>}
+                        </td>
+                        <td className="px-4 py-2.5 font-mono">
+                          {rf.depIata ?? "—"} → {rf.arrIata ?? "—"}
+                          {(rf.depCity || rf.arrCity) && (
+                            <span className="block text-muted-foreground/60 text-[10px]">
+                              {rf.depCity ?? ""}{rf.depCity && rf.arrCity ? " → " : ""}{rf.arrCity ?? ""}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-2.5 font-mono">
+                          {rf.actualDepLocal
+                            ? rf.actualDepLocal.match(/(\d{2}:\d{2})/)?.[1] ?? "—"
+                            : rf.scheduledDepLocal
+                            ? rf.scheduledDepLocal.match(/(\d{2}:\d{2})/)?.[1] ?? "—"
+                            : "—"}
+                        </td>
+                        <td className="px-4 py-2.5 font-mono">
+                          {rf.actualArrLocal
+                            ? rf.actualArrLocal.match(/(\d{2}:\d{2})/)?.[1] ?? "—"
+                            : rf.scheduledArrLocal
+                            ? rf.scheduledArrLocal.match(/(\d{2}:\d{2})/)?.[1] ?? "—"
+                            : "—"}
+                        </td>
+                        <td className={`px-4 py-2.5 font-mono font-semibold ${delayClass(depDelay)}`}>
+                          {delayLabel(depDelay)}
+                        </td>
+                        <td className={`px-4 py-2.5 font-mono font-semibold ${delayClass(arrDelay)}`}>
+                          {delayLabel(arrDelay)}
+                        </td>
+                        <td className="px-4 py-2.5 font-mono">
+                          {rf.actualDurationMin
+                            ? formatDuration(rf.actualDurationMin)
+                            : rf.durationMin
+                            ? formatDuration(rf.durationMin)
+                            : "—"}
+                        </td>
+                        <td className="px-4 py-2.5 font-mono">
+                          {rf.distanceKm ? `${rf.distanceKm.toLocaleString()} km` : "—"}
+                        </td>
+                        <td className="px-4 py-2.5">
+                          {rf.prayerCount ? (
+                            <span className="font-semibold text-primary">{rf.prayerCount}</span>
+                          ) : "—"}
+                          {rf.prayerNames && (
+                            <span className="block text-muted-foreground/60 text-[10px]">
+                              {(() => { try { return (JSON.parse(rf.prayerNames) as string[]).join(", "); } catch { return rf.prayerNames; } })()}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-2.5 font-mono font-bold text-primary">
+                          {rf.baggageBelt ?? "—"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           </div>
         )}
@@ -684,6 +916,101 @@ export default function Home() {
               </div>
             )}
 
+            {/* ── ARRIVAL SUMMARY CARD ── */}
+            {isLanded && (
+              <div className="avi-panel">
+                <PanelHeader icon={<Clock className="w-3.5 h-3.5" />} title="Arrival Summary" badge="COMPLETED" />
+                <div className="p-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 text-sm">
+                    {/* Departure */}
+                    <div>
+                      <div className="avi-label mb-1">Departed ({flight?.dep_iata ?? "—"})</div>
+                      <div className="font-mono font-semibold text-foreground">
+                        {flight?.dep_actual ? formatLocalTime(flight.dep_actual).local : flight?.dep_time ? formatLocalTime(flight.dep_time).local : fr24?.datetimeTakeoff ? formatTime(fr24.datetimeTakeoff) : "—"}
+                      </div>
+                      {flight?.dep_actual_utc && <div className="text-[10px] text-muted-foreground/60 font-mono">{formatTime(flight.dep_actual_utc)}</div>}
+                    </div>
+                    {/* Arrival */}
+                    <div>
+                      <div className="avi-label mb-1">Arrived ({flight?.arr_iata ?? "—"})</div>
+                      <div className="font-mono font-semibold text-foreground">
+                        {flight?.arr_actual ? formatLocalTime(flight.arr_actual).local : fr24?.datetimeLanded ? formatTime(fr24.datetimeLanded) : "—"}
+                      </div>
+                      {(flight?.arr_actual_utc ?? fr24?.datetimeLanded) && <div className="text-[10px] text-muted-foreground/60 font-mono">{formatTime(flight?.arr_actual_utc ?? fr24?.datetimeLanded)}</div>}
+                    </div>
+                    {/* Dep delay */}
+                    <div>
+                      <div className="avi-label mb-1">Dep Delay</div>
+                      <div className={`font-semibold font-mono ${(flight?.dep_delay ?? 0) > 0 ? "text-yellow-400" : "text-green-400"}`}>
+                        {formatDelay(flight?.dep_delay)}
+                      </div>
+                    </div>
+                    {/* Arr delay */}
+                    <div>
+                      <div className="avi-label mb-1">Arr Delay</div>
+                      <div className={`font-semibold font-mono ${(flight?.arr_delay ?? 0) > 0 ? "text-yellow-400" : "text-green-400"}`}>
+                        {formatDelay(flight?.arr_delay)}
+                      </div>
+                    </div>
+                    {/* Scheduled duration */}
+                    {flight?.duration != null && (
+                      <div>
+                        <div className="avi-label mb-1">Scheduled Duration</div>
+                        <div className="font-mono font-semibold text-foreground">{formatDuration(flight.duration)}</div>
+                      </div>
+                    )}
+                    {/* Actual duration */}
+                    {(() => {
+                      const depMs2 = flight?.dep_actual_utc ? new Date(flight.dep_actual_utc).getTime() : null;
+                      const arrMs2 = (flight?.arr_actual_utc ?? fr24?.datetimeLanded) ? new Date(flight?.arr_actual_utc ?? fr24!.datetimeLanded!).getTime() : null;
+                      const actualMins = depMs2 && arrMs2 && arrMs2 > depMs2 ? Math.round((arrMs2 - depMs2) / 60000) : null;
+                      return actualMins ? (
+                        <div>
+                          <div className="avi-label mb-1">Actual Duration</div>
+                          <div className="font-mono font-semibold text-foreground">{formatDuration(actualMins)}</div>
+                        </div>
+                      ) : null;
+                    })()}
+                    {/* Distance */}
+                    {fr24?.actualDistance && (
+                      <div>
+                        <div className="avi-label mb-1">Distance Flown</div>
+                        <div className="font-mono font-semibold text-foreground">{formatDistance(fr24.actualDistance)}</div>
+                      </div>
+                    )}
+                    {/* Baggage */}
+                    {flight?.arr_baggage && (
+                      <div>
+                        <div className="avi-label mb-1">Baggage Belt</div>
+                        <div className="font-mono font-bold text-xl" style={{ color: "oklch(0.72 0.18 55)" }}>{flight.arr_baggage}</div>
+                      </div>
+                    )}
+                    {/* Terminal */}
+                    {flight?.arr_terminal && (
+                      <div>
+                        <div className="avi-label mb-1">Terminal</div>
+                        <div className="font-mono font-semibold text-foreground">{flight.arr_terminal}</div>
+                      </div>
+                    )}
+                    {/* Gate */}
+                    {flight?.arr_gate && (
+                      <div>
+                        <div className="avi-label mb-1">Gate</div>
+                        <div className="font-mono font-semibold text-foreground">{flight.arr_gate}</div>
+                      </div>
+                    )}
+                    {/* Runway */}
+                    {fr24?.runwayLanded && (
+                      <div>
+                        <div className="avi-label mb-1">Landing Runway</div>
+                        <div className="font-mono font-semibold text-foreground">{fr24.runwayLanded}</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* ── 1. Identity bar ── */}
             <div className="avi-panel">
               <div className="px-4 py-3">
@@ -795,7 +1122,9 @@ export default function Home() {
                   value={localAircraftTime ? localAircraftTime.time : "—"}
                   sub={
                     localAircraftTime
-                      ? `${localAircraftTime.offsetLabel}${positionIsEstimated ? " · est" : ""}`
+                      ? localAircraftTime.tzName
+                        ? `${localAircraftTime.offsetLabel} · ${localAircraftTime.tzName}${positionIsEstimated ? " · est" : ""}`
+                        : `${localAircraftTime.offsetLabel}${positionIsEstimated ? " · est" : ""}`
                       : undefined
                   }
                   accent="cyan"
