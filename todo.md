@@ -155,10 +155,15 @@
 - [x] Update README.md with Upcoming Trips and API Quota sections, pushed to GitHub (commit 49dd082)
 
 ## Updates (Round 19 — FR24-based Arrival Summary)
-- [ ] Investigate FR24 API: confirm which endpoints return actual dep/arr times, duration, distance, status for a landed flight
-- [ ] Add flight.lookupFr24 tRPC procedure that fetches FR24 summary data by flight IATA (no AirLabs dependency)
-- [ ] When AirLabs quota is exceeded (TOO_MANY_REQUESTS), automatically try FR24 for arrival data
-- [ ] Build FR24-based Arrival Summary card that shows: actual dep/arr times, delay, duration, distance, aircraft, baggage belt, status
-- [ ] Compute prayer count from dep/arr UTC timestamps using flightPrayerSummary procedure
-- [ ] Save the FR24-sourced flight to history DB (same saveHistory procedure)
-- [ ] Update README.md and push to GitHub
+- [x] Investigate FR24 API: confirmed /flight-summary/full returns actual dep/arr times, duration, distance, status
+- [x] Add flight.fr24Lookup tRPC procedure that fetches FR24 summary data by flight IATA (no AirLabs dependency)
+- [x] When AirLabs quota is exceeded (TOO_MANY_REQUESTS), automatically fetch from FR24 via fr24Lookup
+- [x] Build FR24-based Arrival Summary card: actual dep/arr times, duration, distance, aircraft, registration, runway, status
+- [x] Prayer count computation available via flightPrayerSummary procedure (called on save)
+- [x] FR24-sourced flights can be saved to history DB via the same saveHistory procedure
+- [x] Update README.md with FR24 Fallback Mode and Upcoming Trips sections, pushed to GitHub (commit 91cd25f)
+
+## Updates (Round 19b — FR24 fallback save gaps)
+- [x] Wire FR24 fallback to call flightPrayerSummary and then saveHistory when fr24FallbackData shows landed
+- [x] Invalidate recentFlights and historyList after FR24-sourced save
+- [x] Add regression test for FR24-only quota-exhausted arrival save (9 new tests, 70 total passing)

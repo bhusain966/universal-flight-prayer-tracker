@@ -10,13 +10,38 @@ vi.mock("./airlabs", () => ({
 // Mock FR24 — no real HTTP calls
 vi.mock("./fr24", () => ({
   fetchFr24FlightData: vi.fn(),
+  fetchFr24FlightByIata: vi.fn(),
 }));
-
+// Mock airport-data-js — no file I/O in tests
+vi.mock("airport-data-js", () => ({
+  getAirportByIata: vi.fn().mockImplementation((iata: string) => {
+    const coords: Record<string, { latitude: number; longitude: number }> = {
+      ORD: { latitude: 41.9742, longitude: -87.9073 },
+      DOH: { latitude: 25.2731, longitude: 51.6081 },
+    };
+    const c = coords[iata];
+    return Promise.resolve(c ? [{ iata, ...c }] : []);
+  }),
+}));
 import { fetchFlightData } from "./airlabs";
-import { fetchFr24FlightData } from "./fr24";
-
+import { fetchFr24FlightData, fetchFr24FlightByIata } from "./fr24";
+import { getAirportByIata } from "airport-data-js";
 const mockFetchFlightData = vi.mocked(fetchFlightData);
 const mockFetchFr24 = vi.mocked(fetchFr24FlightData);
+const mockFetchFr24ByIata = vi.mocked(fetchFr24FlightByIata);
+const mockGetAirportByIata = vi.mocked(getAirportByIata);
+
+/** Re-apply airport coords mock after vi.clearAllMocks() resets implementations */
+function resetAirportMock() {
+  const AIRPORT_COORDS: Record<string, { latitude: number; longitude: number }> = {
+    ORD: { latitude: 41.9742, longitude: -87.9073 },
+    DOH: { latitude: 25.2731, longitude: 51.6081 },
+  };
+  mockGetAirportByIata.mockImplementation((iata: string) => {
+    const c = AIRPORT_COORDS[iata];
+    return Promise.resolve(c ? [{ iata, ...c }] : []);
+  });
+}
 
 function createPublicContext(): TrpcContext {
   return {
@@ -388,5 +413,143 @@ describe("AirLabs datetime normalisation regression", () => {
     // UTC fields must parse to correct UTC hours
     expect(new Date(f.dep_time_utc!).getUTCHours()).toBe(0);
     expect(new Date(f.dep_actual_utc!).getUTCHours()).toBe(0);
+  });
+});
+
+// ─── FR24 Fallback (quota-exhausted) tests ───────────────────────────────────
+describe("flight.fr24Lookup — quota-exhausted fallback", () => {
+  const MOCK_FR24_SUMMARY = {
+    fr24_id: "abc123",
+    flight: "QR726",
+    callsign: "QTR726",
+    operating_as: "Qatar Airways",
+    type: "A35K",
+    reg: "A7-AND",
+    orig_iata: "ORD",
+    dest_iata: "DOH",
+    dest_iata_actual: "DOH",
+    datetime_takeoff: "2026-05-16T00:46:00Z",
+    datetime_landed: "2026-05-16T13:35:00Z",
+    runway_takeoff: "10R",
+    runway_landed: "34L",
+    flight_time: 769,
+    actual_distance: 11150,
+    flight_ended: true,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetAirportMock();
+    mockFetchFr24ByIata.mockResolvedValue({
+      summary: MOCK_FR24_SUMMARY,
+      quota: { creditsRemaining: 42, creditsConsumed: 1 },
+    });
+  });
+
+  it("returns a landed flight with isLanded=true when datetime_landed is set", async () => {
+    const caller = appRouter.createCaller(createPublicContext());
+    const result = await caller.flight.fr24Lookup({ flightIata: "QR726", hoursBack: 30 });
+    expect(result.isLanded).toBe(true);
+    expect(result.flightEnded).toBe(true);
+  });
+
+  it("maps FR24 summary fields to the expected output shape", async () => {
+    const caller = appRouter.createCaller(createPublicContext());
+    const result = await caller.flight.fr24Lookup({ flightIata: "QR726", hoursBack: 30 });
+    expect(result.flightIata).toBe("QR726");
+    expect(result.airline).toBe("Qatar Airways");
+    expect(result.aircraft).toBe("A35K");
+    expect(result.registration).toBe("A7-AND");
+    expect(result.depIata).toBe("ORD");
+    expect(result.arrIata).toBe("DOH");
+    expect(result.datetimeTakeoff).toBe("2026-05-16T00:46:00Z");
+    expect(result.datetimeLanded).toBe("2026-05-16T13:35:00Z");
+    expect(result.runwayLanded).toBe("34L");
+    expect(result.flightTimeMinutes).toBe(769);
+    expect(result.actualDistanceKm).toBe(11150);
+  });
+
+  it("enriches output with airport midpoint coordinates from local dataset", async () => {
+    const caller = appRouter.createCaller(createPublicContext());
+    const result = await caller.flight.fr24Lookup({ flightIata: "QR726", hoursBack: 30 });
+    // ORD: 41.9742, -87.9073 | DOH: 25.2731, 51.6081
+    // Midpoint should be somewhere over the Atlantic/Middle East
+    expect(result.depLat).toBeCloseTo(41.97, 1);
+    expect(result.depLng).toBeCloseTo(-87.91, 1);
+    expect(result.arrLat).toBeCloseTo(25.27, 1);
+    expect(result.arrLng).toBeCloseTo(51.61, 1);
+    // midLat/midLng must be non-null and in valid range
+    expect(result.midLat).not.toBeNull();
+    expect(result.midLng).not.toBeNull();
+    expect(result.midLat!).toBeGreaterThan(-90);
+    expect(result.midLat!).toBeLessThan(90);
+  });
+
+  it("prayer summary can be computed using midpoint coords from fr24Lookup output", async () => {
+    const caller = appRouter.createCaller(createPublicContext());
+    const fr24 = await caller.flight.fr24Lookup({ flightIata: "QR726", hoursBack: 30 });
+    // Simulate the FR24 fallback save flow: compute prayers using midpoint
+    expect(fr24.midLat).not.toBeNull();
+    expect(fr24.midLng).not.toBeNull();
+    const ps = await caller.flight.flightPrayerSummary({
+      depUtc: fr24.datetimeTakeoff!,
+      arrUtc: fr24.datetimeLanded!,
+      lat: fr24.midLat!,
+      lng: fr24.midLng!,
+    });
+    // QR726 ORD→DOH is ~13h; should have at least 2 prayers
+    expect(ps.prayerCount).toBeGreaterThanOrEqual(2);
+    expect(typeof ps.prayerNames).toBe("string");
+    expect(typeof ps.prayerDetails).toBe("string");
+  });
+
+  it("exposes fr24Quota from the API response", async () => {
+    const caller = appRouter.createCaller(createPublicContext());
+    const result = await caller.flight.fr24Lookup({ flightIata: "QR726", hoursBack: 30 });
+    expect(result.fr24Quota?.creditsRemaining).toBe(42);
+    expect(result.fr24Quota?.creditsConsumed).toBe(1);
+  });
+
+  it("throws NOT_FOUND when FR24 returns null (flight not found)", async () => {
+    mockFetchFr24ByIata.mockResolvedValueOnce(null);
+    const caller = appRouter.createCaller(createPublicContext());
+    await expect(
+      caller.flight.fr24Lookup({ flightIata: "XX999", hoursBack: 24 })
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("isLanded is true when flight_ended=true even if datetime_landed is null", async () => {
+    mockFetchFr24ByIata.mockResolvedValueOnce({
+      summary: { ...MOCK_FR24_SUMMARY, datetime_landed: null, flight_ended: true },
+    });
+    const caller = appRouter.createCaller(createPublicContext());
+    const result = await caller.flight.fr24Lookup({ flightIata: "QR726" });
+    expect(result.isLanded).toBe(true);
+    expect(result.datetimeLanded).toBeNull();
+  });
+
+  it("isLanded is false when flight is still airborne", async () => {
+    mockFetchFr24ByIata.mockResolvedValueOnce({
+      summary: { ...MOCK_FR24_SUMMARY, datetime_landed: null, flight_ended: false },
+    });
+    const caller = appRouter.createCaller(createPublicContext());
+    const result = await caller.flight.fr24Lookup({ flightIata: "QR726" });
+    expect(result.isLanded).toBe(false);
+  });
+
+  it("flightPrayerSummary computes prayer count for a QR726-length flight (ORD→DOH)", async () => {
+    // Simulate the server-side prayer summary that would be called by the FR24 save flow
+    // QR726 ORD→DOH: ~13h 49m, midpoint lat/lng roughly over Atlantic
+    const caller = appRouter.createCaller(createPublicContext());
+    const ps = await caller.flight.flightPrayerSummary({
+      depUtc: "2026-05-16T00:46:00Z",
+      arrUtc: "2026-05-16T13:35:00Z",
+      lat: 50.0,
+      lng: -30.0,
+    });
+    // A ~13h flight crossing multiple time zones should have at least 2 prayers
+    expect(ps.prayerCount).toBeGreaterThanOrEqual(2);
+    expect(typeof ps.prayerNames).toBe("string");
+    expect(typeof ps.prayerDetails).toBe("string");
   });
 });

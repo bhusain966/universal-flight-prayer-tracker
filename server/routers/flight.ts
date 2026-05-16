@@ -7,6 +7,7 @@ import { getPrayerTimesResult, calculatePrayerTimes } from "../prayer";
 import { fetchWeatherAtPosition } from "../weather";
 import { saveFlightHistory, getRecentFlights, getFlightHistoryByIata, getFlightHistoryPaginated, addUpcomingTrip, getUpcomingTrips, deleteUpcomingTrip } from "../db";
 import { makeRequest } from "../_core/map";
+import { getAirportByIata } from "airport-data-js";
 
 /**
  * Interpolate a position along the great-circle arc between two points.
@@ -471,14 +472,53 @@ export const flightRouter = router({
       }
       const { summary, quota } = result;
       const isLanded = !!summary.datetime_landed || summary.flight_ended === true;
+
+      // Enrich with airport coordinates for prayer calculation
+      // airport-data-js is a local dataset — no API quota consumed
+      const depIata = summary.orig_iata;
+      const arrIata = summary.dest_iata_actual ?? summary.dest_iata;
+      let depLat: number | null = null;
+      let depLng: number | null = null;
+      let arrLat: number | null = null;
+      let arrLng: number | null = null;
+      let midLat: number | null = null;
+      let midLng: number | null = null;
+
+      try {
+        if (depIata) {
+          const depApts = await getAirportByIata(depIata);
+          const dep = Array.isArray(depApts) ? depApts[0] : depApts;
+          if (dep?.latitude != null && dep?.longitude != null) {
+            depLat = parseFloat(String(dep.latitude));
+            depLng = parseFloat(String(dep.longitude));
+          }
+        }
+        if (arrIata) {
+          const arrApts = await getAirportByIata(arrIata);
+          const arr = Array.isArray(arrApts) ? arrApts[0] : arrApts;
+          if (arr?.latitude != null && arr?.longitude != null) {
+            arrLat = parseFloat(String(arr.latitude));
+            arrLng = parseFloat(String(arr.longitude));
+          }
+        }
+        // Compute great-circle midpoint for prayer calculation
+        if (depLat != null && depLng != null && arrLat != null && arrLng != null) {
+          const mid = interpolateGreatCircle(depLat, depLng, arrLat, arrLng, 0.5);
+          midLat = mid.lat;
+          midLng = mid.lng;
+        }
+      } catch {
+        // Airport lookup is best-effort — proceed without coords
+      }
+
       return {
         flightIata: summary.flight ?? input.flightIata.toUpperCase(),
         callsign: summary.callsign,
         airline: summary.operating_as,
         aircraft: summary.type,
         registration: summary.reg,
-        depIata: summary.orig_iata,
-        arrIata: summary.dest_iata_actual ?? summary.dest_iata,
+        depIata,
+        arrIata,
         depIcao: summary.orig_icao,
         arrIcao: summary.dest_icao_actual ?? summary.dest_icao,
         datetimeTakeoff: summary.datetime_takeoff ?? null,
@@ -494,6 +534,13 @@ export const flightRouter = router({
         flightEnded: summary.flight_ended ?? false,
         isLanded,
         fr24Quota: quota,
+        // Airport coordinates for prayer calculation
+        depLat,
+        depLng,
+        arrLat,
+        arrLng,
+        midLat,
+        midLng,
       };
     }),
 

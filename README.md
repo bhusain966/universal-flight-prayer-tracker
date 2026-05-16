@@ -5,7 +5,7 @@ A real-time, dark-themed aviation dashboard that lets you track any live flight 
 ![Stack](https://img.shields.io/badge/Stack-React%2019%20%2B%20Express%204%20%2B%20tRPC%2011-blue?style=flat-square)
 ![Node](https://img.shields.io/badge/Node.js-22-green?style=flat-square)
 ![MySQL](https://img.shields.io/badge/Database-MySQL%208-orange?style=flat-square)
-![Tests](https://img.shields.io/badge/Tests-61%20passing-brightgreen?style=flat-square)
+![Tests](https://img.shields.io/badge/Tests-70%20passing-brightgreen?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-lightgrey?style=flat-square)
 
 ---
@@ -53,7 +53,7 @@ When ADS-B is unavailable, position is estimated via great-circle interpolation.
 
 ### FR24 Fallback Mode (AirLabs Quota Exhausted)
 
-When the AirLabs monthly quota is exhausted, the app automatically switches to FR24 as the sole data source. Searching any flight number triggers a date-range query against the FR24 `/flight-summary/full` endpoint, which returns actual takeoff/landing times, flight duration, distance, aircraft registration, and runway information — all without requiring AirLabs. A yellow banner indicates the fallback is active. Once the AirLabs quota resets on the 1st of each month, normal dual-source tracking resumes automatically.
+When the AirLabs monthly quota is exhausted, the app automatically switches to FR24 as the sole data source. Searching any flight number triggers a date-range query against the FR24 `/flight-summary/full` endpoint, which returns actual takeoff/landing times, flight duration, distance, aircraft registration, and runway information — all without requiring AirLabs. A yellow banner indicates the fallback is active. When a landed flight is detected via FR24, the app automatically computes prayer times using the great-circle midpoint of the route (resolved from a local airport coordinates dataset — no API quota consumed) and saves the flight to the history database, exactly as the normal AirLabs landing path does. Once the AirLabs quota resets on the 1st of each month, normal dual-source tracking resumes automatically.
 
 ### Upcoming Trips
 

@@ -118,6 +118,9 @@ importers:
       '@types/leaflet':
         specifier: ^1.9.21
         version: 1.9.21
+      airport-data-js:
+        specifier: ^3.1.0
+        version: 3.1.0
       axios:
         specifier: ^1.12.0
         version: 1.12.2
@@ -2398,6 +2401,9 @@ packages:
   add@2.0.6:
     resolution: {integrity: sha512-j5QzrmsokwWWp6kUcJQySpbG+xfOBqqKnup3OIk1pz+kB/80SLorZ9V8zHFLO92Lcd+hbvq8bT+zOGoPkmBV0Q==}
 
+  airport-data-js@3.1.0:
+    resolution: {integrity: sha512-BUzYBrRRqvdicHm9uBCTcefPDt8cq+dOBIk3SvA3Im3k7k7jPYGftAi6W0BrX2F2E7ameNBnAP/Cgv3n40mZ5Q==}
+
   aria-hidden@1.2.6:
     resolution: {integrity: sha512-ik3ZgC9dY/lYVVM++OISsaYDeg1tb0VtP5uL3ouh1koGOaUMDPpbFIei4JkFimWUFPn90sbMNMXQAIVOlnYKJA==}
     engines: {node: '>=10'}
@@ -3267,6 +3273,9 @@ packages:
     resolution: {integrity: sha512-XmOWe7eyHYH14cLdVPoyg+GOH3rYX++KpzrylJwSW98t3Nk+U8XOl8FWKOgwtzdb8lXGf6zYwDUzeHMWfxasyg==}
     engines: {node: '>=6'}
     hasBin: true
+
+  jsonpack@1.1.5:
+    resolution: {integrity: sha512-d2vwomK605ks7Q+uCpbwGyoIF5j+UZuJjlYcugISBt3CxM+eBo/W6y63yVPIyIvbYON+pvJYsYZjCYbzqJj/xQ==}
 
   katex@0.16.25:
     resolution: {integrity: sha512-woHRUZ/iF23GBP1dkDQMh1QBad9dmr8/PAwNA54VrSOVYgI12MAcE14TqnDdQOdzyEonGzMepYnqBMYdsoAr8Q==}
@@ -6778,6 +6787,10 @@ snapshots:
 
   add@2.0.6: {}
 
+  airport-data-js@3.1.0:
+    dependencies:
+      jsonpack: 1.1.5
+
   aria-hidden@1.2.6:
     dependencies:
       tslib: 2.8.1
@@ -7689,6 +7702,8 @@ snapshots:
   jsesc@3.1.0: {}
 
   json5@2.2.3: {}
+
+  jsonpack@1.1.5: {}
 
   katex@0.16.25:
     dependencies:

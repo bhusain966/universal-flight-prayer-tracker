@@ -414,6 +414,8 @@ export default function Home() {
   const [isLandedLocked, setIsLandedLocked] = useState(false);
   // Track whether we have already saved this flight to history
   const [historySaved, setHistorySaved] = useState(false);
+  // Track whether we have already saved the FR24-fallback flight to history
+  const [fr24HistorySaved, setFr24HistorySaved] = useState(false);
   // Store the prayer summary after the history record is saved (for Share Arrival)
   const [lastSavedPrayers, setLastSavedPrayers] = useState<{ count: number; names: string }>({ count: 0, names: "" });
 
@@ -478,9 +480,10 @@ export default function Home() {
     }
   }, [data?.isLanded, isLandedLocked]);
 
-  // Reset history-saved flag when a new flight is searched
+  // Reset history-saved flags when a new flight is searched
   useEffect(() => {
     setHistorySaved(false);
+    setFr24HistorySaved(false);
   }, [flightIata]);
 
   useEffect(() => {
@@ -586,12 +589,95 @@ export default function Home() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data?.isLanded, historySaved]);
 
+  // Auto-save FR24 fallback flight history when fr24FallbackData shows a landed flight
+  useEffect(() => {
+    if (!fr24FallbackData?.isLanded || fr24HistorySaved) return;
+    const f = fr24FallbackData;
+    // fr24Lookup returns datetimeTakeoff / datetimeLanded as ISO strings or null
+    const depUtc = f.datetimeTakeoff ?? undefined;
+    const arrUtc = f.datetimeLanded ?? undefined;
+
+    // Use the great-circle midpoint from the enriched fr24Lookup output
+    // (computed server-side from airport-data-js, no API quota consumed)
+    const midLat: number | null = f.midLat ?? null;
+    const midLng: number | null = f.midLng ?? null;
+
+    const buildFr24Record = (prayerCount = 0, prayerNames?: string, prayerDetails?: string) => ({
+      flightIata: f.flightIata ?? flightIata ?? '',
+      flightIcao: undefined,
+      airlineName: f.airline ?? undefined,
+      airlineIata: undefined,
+      aircraft: f.aircraft ?? undefined,
+      regNumber: f.registration ?? undefined,
+      depIata: f.depIata ?? undefined,
+      depCity: undefined,
+      arrIata: f.arrIata ?? undefined,
+      arrCity: undefined,
+      scheduledDepUtc: undefined,
+      actualDepUtc: depUtc,
+      scheduledArrUtc: undefined,
+      actualArrUtc: arrUtc,
+      scheduledDepLocal: undefined,
+      actualDepLocal: undefined,
+      scheduledArrLocal: undefined,
+      actualArrLocal: undefined,
+      depDelayMin: undefined,
+      arrDelayMin: undefined,
+      durationMin: f.flightTimeMinutes ?? undefined,
+      actualDurationMin: f.flightTimeMinutes ?? undefined,
+      distanceKm: f.actualDistanceKm ? Math.round(f.actualDistanceKm) : undefined,
+      baggageBelt: undefined,
+      arrTerminal: undefined,
+      arrGate: undefined,
+      runwayLanded: f.runwayLanded ?? undefined,
+      prayerCount,
+      prayerNames,
+      prayerDetails,
+    });
+
+    setFr24HistorySaved(true);
+
+    if (depUtc && arrUtc && midLat != null && midLng != null) {
+      utils.client.flight.flightPrayerSummary
+        .query({ depUtc, arrUtc, lat: midLat, lng: midLng })
+        .then((ps) => {
+          saveHistory.mutate(buildFr24Record(ps.prayerCount, ps.prayerNames, ps.prayerDetails), {
+            onSuccess: () => {
+              utils.flight.recentFlights.invalidate();
+              utils.flight.historyList.invalidate();
+              try {
+                const names = ps.prayerNames ? JSON.parse(ps.prayerNames) as string[] : [];
+                setLastSavedPrayers({ count: ps.prayerCount, names: names.join(", ") });
+              } catch { /* ignore */ }
+            },
+          });
+        })
+        .catch(() => {
+          saveHistory.mutate(buildFr24Record(), {
+            onSuccess: () => {
+              utils.flight.recentFlights.invalidate();
+              utils.flight.historyList.invalidate();
+            },
+          });
+        });
+    } else {
+      saveHistory.mutate(buildFr24Record(), {
+        onSuccess: () => {
+          utils.flight.recentFlights.invalidate();
+          utils.flight.historyList.invalidate();
+        },
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fr24FallbackData?.isLanded, fr24HistorySaved]);
+
   const handleSearch = useCallback(() => {
     const val = inputValue.trim().toUpperCase();
     if (val.length < 2) return;
     // Reset landed lock when a new flight is entered
     setIsLandedLocked(false);
     setHistorySaved(false);
+    setFr24HistorySaved(false);
     setLastSavedPrayers({ count: 0, names: "" });
     setFlightIata(val);
     // Push to URL for deep linking / bookmarking
