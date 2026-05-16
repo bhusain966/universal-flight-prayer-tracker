@@ -54,14 +54,24 @@ function interpolateGreatCircle(
 }
 
 /**
- * AirLabs returns datetimes as 'YYYY-MM-DD HH:MM' (UTC, space-separated).
- * Normalise to ISO 8601 'YYYY-MM-DDTHH:MMZ' so new Date() always works on any client.
+ * Normalise an AirLabs UTC datetime string to ISO 8601 with Z suffix.
+ * Only for _utc fields.
  */
 function normDt(raw: string | null | undefined): string | undefined {
   if (!raw) return undefined;
   if (raw.includes("T")) return raw; // already ISO
   const n = raw.replace(" ", "T") + "Z";
   return isNaN(new Date(n).getTime()) ? raw : n;
+}
+
+/**
+ * Preserve an AirLabs LOCAL datetime string (dep_time, arr_time, etc.).
+ * Converts space to T for consistent regex extraction but does NOT append Z.
+ */
+function normLocal(raw: string | null | undefined): string | undefined {
+  if (!raw) return undefined;
+  if (raw.includes(" ")) return raw.replace(" ", "T");
+  return raw;
 }
 
 export const flightRouter = router({
@@ -128,16 +138,24 @@ export const flightRouter = router({
               ).catch(() => null)
             : null;
 
-        // Normalise all AirLabs datetime strings to ISO 8601 in the router response
-        // This ensures the fix applies regardless of whether data comes from real API or mocks
+        // Normalise datetime strings in the router response.
+        // UTC fields get Z suffix; local fields are kept as local time strings.
         if (data?.flight) {
           const f = data.flight;
+          // UTC fields — normalise to ISO 8601 with Z
           f.dep_time_utc = normDt(f.dep_time_utc);
           f.dep_actual_utc = normDt(f.dep_actual_utc);
           f.dep_estimated_utc = normDt(f.dep_estimated_utc);
           f.arr_time_utc = normDt(f.arr_time_utc);
           f.arr_actual_utc = normDt(f.arr_actual_utc);
           f.arr_estimated_utc = normDt(f.arr_estimated_utc);
+          // Local fields — preserve as local time (no Z suffix)
+          f.dep_time = normLocal(f.dep_time);
+          f.dep_actual = normLocal(f.dep_actual);
+          f.dep_estimated = normLocal(f.dep_estimated);
+          f.arr_time = normLocal(f.arr_time);
+          f.arr_actual = normLocal(f.arr_actual);
+          f.arr_estimated = normLocal(f.arr_estimated);
         }
 
         return {

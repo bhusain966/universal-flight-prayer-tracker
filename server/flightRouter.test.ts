@@ -271,4 +271,40 @@ describe("AirLabs datetime normalisation regression", () => {
     expect(arr.getUTCHours()).toBe(13);
     expect(arr.getUTCMinutes()).toBe(35);
   });
+
+  it("preserves local time fields without Z suffix (airport local timezone)", async () => {
+    // QR726 ORD departure: local CDT time is 19:20, UTC is 00:20
+    // dep_time (local) must NOT have Z appended so frontend can extract '19:20' directly
+    mockFetchFlightData.mockResolvedValueOnce({
+      ...MOCK_FLIGHT_DATA,
+      flight: {
+        ...MOCK_FLIGHT_DATA.flight,
+        dep_time: "2026-05-15 19:20",       // local ORD time (CDT)
+        dep_time_utc: "2026-05-16 00:20",   // UTC equivalent
+        dep_actual: "2026-05-15 19:46",     // local actual
+        dep_actual_utc: "2026-05-16 00:46", // UTC actual
+        arr_time: "2026-05-16 20:15",       // local DOH time
+        arr_time_utc: "2026-05-16 17:15",   // UTC equivalent
+      },
+    });
+    mockFetchFr24.mockResolvedValueOnce(null);
+    const caller = appRouter.createCaller(createPublicContext());
+    const result = await caller.flight.lookup({ flightIata: "QR726" });
+    const f = result.data?.flight!;
+    // Local fields must NOT end with Z
+    expect(f.dep_time).not.toMatch(/Z$/);
+    expect(f.dep_actual).not.toMatch(/Z$/);
+    expect(f.arr_time).not.toMatch(/Z$/);
+    // Local fields must contain the correct local HH:MM
+    expect(f.dep_time).toMatch(/19:20/);
+    expect(f.dep_actual).toMatch(/19:46/);
+    expect(f.arr_time).toMatch(/20:15/);
+    // UTC fields must end with Z
+    expect(f.dep_time_utc).toMatch(/Z$/);
+    expect(f.dep_actual_utc).toMatch(/Z$/);
+    expect(f.arr_time_utc).toMatch(/Z$/);
+    // UTC fields must parse to correct UTC hours
+    expect(new Date(f.dep_time_utc!).getUTCHours()).toBe(0);
+    expect(new Date(f.dep_actual_utc!).getUTCHours()).toBe(0);
+  });
 });

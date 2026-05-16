@@ -23,11 +23,13 @@ import {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/** Normalise AirLabs datetime strings like '2026-05-16 00:19' to ISO '2026-05-16T00:19Z' */
+/**
+ * Parse an AirLabs UTC datetime string ('YYYY-MM-DD HH:MM' UTC or ISO 'YYYY-MM-DDTHH:MMZ').
+ * Returns a Date object (UTC-based).
+ */
 function parseAirlabsDate(raw?: string | null): Date | null {
   if (!raw) return null;
   try {
-    // AirLabs returns 'YYYY-MM-DD HH:MM' (UTC) — replace space with T and append Z
     const iso = raw.includes("T") ? raw : raw.replace(" ", "T") + (raw.endsWith("Z") ? "" : "Z");
     const d = new Date(iso);
     return isNaN(d.getTime()) ? null : d;
@@ -36,6 +38,9 @@ function parseAirlabsDate(raw?: string | null): Date | null {
   }
 }
 
+/**
+ * Format a UTC ISO timestamp (FR24 fields, ETA) — always shows UTC time.
+ */
 function formatTime(raw?: string | null): string {
   if (!raw) return "—";
   const d = parseAirlabsDate(raw);
@@ -43,6 +48,39 @@ function formatTime(raw?: string | null): string {
   const hh = String(d.getUTCHours()).padStart(2, "0");
   const mm = String(d.getUTCMinutes()).padStart(2, "0");
   return `${hh}:${mm} UTC`;
+}
+
+/**
+ * Format an AirLabs LOCAL time field (dep_time / arr_time — NOT the _utc variants).
+ * AirLabs returns these as 'YYYY-MM-DD HH:MM' in the airport's local timezone.
+ * We extract HH:MM directly — no conversion needed.
+ * Appends the UTC equivalent in muted text when utcRaw is provided.
+ */
+function formatLocalTime(localRaw?: string | null, utcRaw?: string | null): { local: string; utc: string | null } {
+  if (!localRaw) return { local: "—", utc: null };
+  const match = localRaw.match(/(\d{2}:\d{2})/);
+  const localStr = match ? match[1] : localRaw;
+  let utcStr: string | null = null;
+  if (utcRaw) {
+    const utcDate = parseAirlabsDate(utcRaw);
+    if (utcDate) {
+      const hh = String(utcDate.getUTCHours()).padStart(2, "0");
+      const mm = String(utcDate.getUTCMinutes()).padStart(2, "0");
+      utcStr = `${hh}:${mm} UTC`;
+    }
+  }
+  return { local: localStr, utc: utcStr };
+}
+
+/** Render a local time with optional UTC sub-label */
+function LocalTimeDisplay({ localRaw, utcRaw }: { localRaw?: string | null; utcRaw?: string | null }) {
+  const { local, utc } = formatLocalTime(localRaw, utcRaw);
+  return (
+    <div>
+      <span className="avi-value text-sm">{local}</span>
+      {utc && <span className="block text-[10px] text-muted-foreground/60 font-mono">{utc}</span>}
+    </div>
+  );
 }
 
 function formatDuration(mins?: number | null): string {
@@ -580,7 +618,7 @@ export default function Home() {
                 <TimeCard
                   label="Elapsed"
                   value={elapsed != null ? formatDuration(elapsed) : "—"}
-                  sub={depActual ? `Dep ${formatTime(depActual)}` : undefined}
+                  sub={flight?.dep_actual ?? flight?.dep_estimated ? `Dep ${formatLocalTime(flight?.dep_actual ?? flight?.dep_estimated).local} local` : undefined}
                   accent="cyan"
                 />
                 <TimeCard
@@ -590,8 +628,8 @@ export default function Home() {
                   accent="amber"
                 />
                 <TimeCard
-                  label="ETA (UTC)"
-                  value={etaIso ? formatTime(etaIso) : "—"}
+                  label="ETA (Arrival)"
+                  value={etaIso ? formatTime(etaIso) : (flight?.arr_estimated ? formatLocalTime(flight.arr_estimated).local : "—")}
                   sub={arrAirport?.name ?? flight?.arr_name ?? undefined}
                   accent="primary"
                 />
@@ -718,12 +756,15 @@ export default function Home() {
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <div className="avi-label mb-0.5">Scheduled</div>
-                      <div className="avi-value text-sm">{formatTime(flight?.dep_time_utc)}</div>
+                      <div className="avi-label mb-0.5">Scheduled (local)</div>
+                      <LocalTimeDisplay localRaw={flight?.dep_time} utcRaw={flight?.dep_time_utc} />
                     </div>
                     <div>
-                      <div className="avi-label mb-0.5">Actual</div>
-                      <div className="avi-value text-sm">{formatTime(flight?.dep_actual_utc ?? flight?.dep_estimated_utc)}</div>
+                      <div className="avi-label mb-0.5">Actual (local)</div>
+                      <LocalTimeDisplay
+                        localRaw={flight?.dep_actual ?? flight?.dep_estimated}
+                        utcRaw={flight?.dep_actual_utc ?? flight?.dep_estimated_utc}
+                      />
                     </div>
                     <div>
                       <div className="avi-label mb-0.5">Delay</div>
@@ -761,12 +802,15 @@ export default function Home() {
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <div className="avi-label mb-0.5">Scheduled</div>
-                      <div className="avi-value text-sm">{formatTime(flight?.arr_time_utc)}</div>
+                      <div className="avi-label mb-0.5">Scheduled (local)</div>
+                      <LocalTimeDisplay localRaw={flight?.arr_time} utcRaw={flight?.arr_time_utc} />
                     </div>
                     <div>
-                      <div className="avi-label mb-0.5">Estimated</div>
-                      <div className="avi-value text-sm">{formatTime(flight?.arr_estimated_utc ?? flight?.arr_actual_utc)}</div>
+                      <div className="avi-label mb-0.5">Estimated (local)</div>
+                      <LocalTimeDisplay
+                        localRaw={flight?.arr_estimated ?? flight?.arr_actual}
+                        utcRaw={flight?.arr_estimated_utc ?? flight?.arr_actual_utc}
+                      />
                     </div>
                     <div>
                       <div className="avi-label mb-0.5">Delay</div>

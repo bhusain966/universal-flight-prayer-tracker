@@ -97,16 +97,28 @@ export interface FlightFullData {
 }
 
 /**
- * AirLabs returns datetimes as 'YYYY-MM-DD HH:MM' (UTC, space-separated).
- * JavaScript's Date constructor does not reliably parse this format in all environments.
- * Normalise to ISO 8601 'YYYY-MM-DDTHH:MMZ' so new Date() always works.
+ * Normalise an AirLabs UTC datetime string ('YYYY-MM-DD HH:MM') to ISO 8601 with Z suffix.
+ * Only use for _utc fields (dep_time_utc, arr_time_utc, etc.).
  */
-function normaliseAirlabsDatetime(raw: string | null | undefined): string | undefined {
+function normaliseUtcDatetime(raw: string | null | undefined): string | undefined {
   if (!raw) return undefined;
   if (raw.includes("T")) return raw; // already ISO
   // '2026-05-16 00:19' → '2026-05-16T00:19Z'
   const normalised = raw.replace(" ", "T") + "Z";
   return isNaN(new Date(normalised).getTime()) ? raw : normalised;
+}
+
+/**
+ * Keep an AirLabs LOCAL datetime string ('YYYY-MM-DD HH:MM') as-is.
+ * These fields (dep_time, arr_time, dep_actual, arr_actual, dep_estimated, arr_estimated)
+ * are in the airport's local timezone. We preserve the raw string so the frontend
+ * can extract HH:MM directly without any UTC conversion.
+ */
+function normaliseLocalDatetime(raw: string | null | undefined): string | undefined {
+  if (!raw) return undefined;
+  // Normalise space to T for consistent HH:MM regex extraction, but do NOT append Z
+  if (raw.includes(" ")) return raw.replace(" ", "T");
+  return raw;
 }
 
 async function airlabsGet<T>(endpoint: string, params: Record<string, string>): Promise<T> {
@@ -174,21 +186,22 @@ export async function fetchFlightData(flightIata: string): Promise<FlightFullDat
     flight_iata: normalized,
     ...(scheduleData ?? {}),
     ...(liveData ?? {}),
-    // Preserve schedule times from scheduleData even if liveData exists
-    // Normalise AirLabs 'YYYY-MM-DD HH:MM' UTC strings to ISO 8601 'YYYY-MM-DDTHH:MMZ'
-    dep_time: normaliseAirlabsDatetime(scheduleData?.dep_time ?? liveData?.dep_time),
-    dep_time_utc: normaliseAirlabsDatetime(scheduleData?.dep_time_utc ?? liveData?.dep_time_utc),
-    dep_actual: normaliseAirlabsDatetime(scheduleData?.dep_actual ?? liveData?.dep_actual),
-    dep_actual_utc: normaliseAirlabsDatetime(scheduleData?.dep_actual_utc ?? liveData?.dep_actual_utc),
-    dep_estimated: normaliseAirlabsDatetime(scheduleData?.dep_estimated ?? liveData?.dep_estimated),
-    dep_estimated_utc: normaliseAirlabsDatetime(scheduleData?.dep_estimated_utc ?? liveData?.dep_estimated_utc),
+    // Preserve schedule times from scheduleData even if liveData exists.
+    // LOCAL fields (dep_time, arr_time, etc.) are in airport local timezone — keep as-is.
+    // UTC fields (dep_time_utc, arr_time_utc, etc.) are normalised to ISO 8601 with Z suffix.
+    dep_time: normaliseLocalDatetime(scheduleData?.dep_time ?? liveData?.dep_time),
+    dep_time_utc: normaliseUtcDatetime(scheduleData?.dep_time_utc ?? liveData?.dep_time_utc),
+    dep_actual: normaliseLocalDatetime(scheduleData?.dep_actual ?? liveData?.dep_actual),
+    dep_actual_utc: normaliseUtcDatetime(scheduleData?.dep_actual_utc ?? liveData?.dep_actual_utc),
+    dep_estimated: normaliseLocalDatetime(scheduleData?.dep_estimated ?? liveData?.dep_estimated),
+    dep_estimated_utc: normaliseUtcDatetime(scheduleData?.dep_estimated_utc ?? liveData?.dep_estimated_utc),
     dep_delay: scheduleData?.dep_delay ?? liveData?.dep_delay,
-    arr_time: normaliseAirlabsDatetime(scheduleData?.arr_time ?? liveData?.arr_time),
-    arr_time_utc: normaliseAirlabsDatetime(scheduleData?.arr_time_utc ?? liveData?.arr_time_utc),
-    arr_actual: normaliseAirlabsDatetime(scheduleData?.arr_actual ?? liveData?.arr_actual),
-    arr_actual_utc: normaliseAirlabsDatetime(scheduleData?.arr_actual_utc ?? liveData?.arr_actual_utc),
-    arr_estimated: normaliseAirlabsDatetime(scheduleData?.arr_estimated ?? liveData?.arr_estimated),
-    arr_estimated_utc: normaliseAirlabsDatetime(scheduleData?.arr_estimated_utc ?? liveData?.arr_estimated_utc),
+    arr_time: normaliseLocalDatetime(scheduleData?.arr_time ?? liveData?.arr_time),
+    arr_time_utc: normaliseUtcDatetime(scheduleData?.arr_time_utc ?? liveData?.arr_time_utc),
+    arr_actual: normaliseLocalDatetime(scheduleData?.arr_actual ?? liveData?.arr_actual),
+    arr_actual_utc: normaliseUtcDatetime(scheduleData?.arr_actual_utc ?? liveData?.arr_actual_utc),
+    arr_estimated: normaliseLocalDatetime(scheduleData?.arr_estimated ?? liveData?.arr_estimated),
+    arr_estimated_utc: normaliseUtcDatetime(scheduleData?.arr_estimated_utc ?? liveData?.arr_estimated_utc),
     arr_delay: scheduleData?.arr_delay ?? liveData?.arr_delay,
     status: scheduleData?.status ?? liveData?.status,
     dep_terminal: scheduleData?.dep_terminal ?? liveData?.dep_terminal,

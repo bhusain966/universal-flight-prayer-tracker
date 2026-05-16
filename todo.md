@@ -81,3 +81,11 @@
 - [x] Create .env.example with all required environment variables documented
 - [x] Write comprehensive README.md with full installation, Docker, and env var instructions
 - [x] Initialize private GitHub repository and push all code
+
+## Updates (Round 12 — Timezone Fix)
+- [ ] Investigate AirLabs time fields: confirm all datetimes are UTC, understand what timezone fields are available
+- [ ] Fetch airport timezone from AirLabs /airports endpoint (timezone field) for both dep and arr airports
+- [ ] Convert schedule times to local airport time server-side using the airport timezone
+- [ ] Update schedule panel UI: show local time as primary, UTC as secondary label
+- [ ] Update identity bar / flight times strip to show correct local departure time
+- [ ] Add regression tests for timezone conversion
