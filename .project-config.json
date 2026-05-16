@@ -1,0 +1,43 @@
+{
+  "build_command": "pnpm run build",
+  "capabilities": [
+    "server",
+    "db",
+    "user"
+  ],
+  "dev_command": "pnpm run dev",
+  "env_vars": {
+    "DATABASE_URL": "mysql://faexbidF3S9JaH7.294dae4b007b:86PL1zopCaOAJr7j21Ch@gateway03.us-east-1.prod.aws.tidbcloud.com:4000/iYydjChkTBmvnkjXv4cCjZ?ssl={\"rejectUnauthorized\":true}"
+  },
+  "experiments": [
+    "no_db_push"
+  ],
+  "git_remote": {
+    "repo_url": "s3://vida-prod-gitrepo/webdev-git/310419663026746615/iYydjChkTBmvnkjXv4cCjZ",
+    "access_key_id": "ASIAZV3A2ECZOLM644RE",
+    "secret_access_key": "9ouCsoEGkYRaFJkuRGLkjvPJ/cMizpF0v9E7CC1r",
+    "session_token": "IQoJb3JpZ2luX2VjELv//////////wEaCXVzLWVhc3QtMSJHMEUCIB+UsKeUu7pmfcasKPt3xG98e7Qp+0IZ/ZzOg96Y6SlrAiEA7/j0EirNK1YF4v7X1zrdBCBxU3iw2Et1Tet0nRCRs0Uq/wMIhP//////////ARAEGgw2NjUzODYwOTg4NjYiDGHX4ZohUzKGrAjZSSrTAzHCFHIQwLPjl96jtxabYDh0TsL3+JvODdtdbW75BjwFfBTchnVpOhBttbIo651m2dd196LMXusxQKI13t/0VdHdPw8MOaF45HbYWMuP6HF0kg3/Ye/WI6ucygnmvuM01BHnzQY/NSbEWWFX++t30l68h9Cha5hv4XdLPdPG/OwoxVRl7ZpwdWDlihWzwA8sLveQlfSBbscU95eCXVtB1RCji4KmLzFhnvASOkaXZthSPHRL/MM+Gd15myRvX1QiOi4FZ1/NWatCuBC384CSpdzveT94dRvR6ztpPyBpw0096oo1bhnvKPRz1H/nSvIn8Fc7xv7/XVd/jSJ9CSs79b1RZpAPu/Ov08jsF5A+QlqUPPYB7Vza+jaUMSxgK5MIc0HpTmBV/FQ0/ap3DrVUQFoR8F/v7nSbU9mr005NTcn75U8a9aMRhf73JjGGvxFagd74b/DYSe7Gg05+43FV/uAwzVPM8XL+hIlD3xmovaUFtTNBB98nbm3tfUSVvD7z5+ah9mPoTOvEQVnTa7w9NxtyidyKHo016oFjuCF2Gw4b9j4pEYjPfIqbRgxiz2t7nxkiR7++DxnBhtBtLsX4Yri6fk/N6BqzRvz9VjURa9KnVs4OMIWun9AGOp0B8qe6xAN31sXnZf7FeunCSniJL0W98dNjbBKz+lzOuGUxKbQVH0J2PZy1375kzDGgprBqTjijTiyKv7JCd54WEHharhJkPJaG7fjr4yFbsAA/HWZfIFVDgYOxxFufrrO4Dwj+ShOuwxdKeVG6IMafSLSuP9b3F/OCx/e1ly83mVIi4jfEcPNmQdprtWB3o+7EUBxF03FKcQMI6xHkAw==",
+    "expiration": "2026-05-16T14:31:33.000Z"
+  },
+  "name": "universal-flight-prayer-tracker",
+  "path": "/home/ubuntu/universal-flight-prayer-tracker",
+  "port": 3000,
+  "secrets": {
+    "BUILT_IN_FORGE_API_KEY": "exmv7RGNxGekKLbqqhgo4G",
+    "BUILT_IN_FORGE_API_URL": "https://forge.manus.ai",
+    "JWT_SECRET": "nmpvGpet7cX7PCLB4EMxKc",
+    "OAUTH_SERVER_URL": "https://api.manus.im",
+    "OWNER_NAME": "Bilal Husain",
+    "OWNER_OPEN_ID": "8uySoVyAPhKS5JCEBAMr8o",
+    "VITE_ANALYTICS_ENDPOINT": "https://manus-analytics.com",
+    "VITE_ANALYTICS_WEBSITE_ID": "4f89f443-cf98-4b5f-b44a-10e2ae5d302a",
+    "VITE_APP_ID": "iYydjChkTBmvnkjXv4cCjZ",
+    "VITE_APP_LOGO": "",
+    "VITE_APP_TITLE": "Universal Flight Prayer Tracker",
+    "VITE_FRONTEND_FORGE_API_KEY": "jyaVxekii2s2ShdNDcAjuM",
+    "VITE_FRONTEND_FORGE_API_URL": "https://forge.manus.ai",
+    "VITE_OAUTH_PORTAL_URL": "https://manus.im"
+  },
+  "template_id": "web-db-user",
+  "test_command": "pnpm test"
+}
