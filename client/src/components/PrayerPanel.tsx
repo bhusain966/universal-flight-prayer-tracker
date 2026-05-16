@@ -15,6 +15,8 @@ interface PrayerPanelProps {
   lat?: number;
   lng?: number;
   positionIsEstimated?: boolean;
+  /** When true, stops all background polling (flight has landed) */
+  isLanded?: boolean;
 }
 
 const PRAYER_METHODS: { value: PrayerMethod; label: string; description: string }[] = [
@@ -78,7 +80,7 @@ function formatTime(utcIso: string): string {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" }) + " UTC";
 }
 
-export default function PrayerPanel({ lat, lng, positionIsEstimated }: PrayerPanelProps) {
+export default function PrayerPanel({ lat, lng, positionIsEstimated, isLanded }: PrayerPanelProps) {
   const [method, setMethod] = useState<PrayerMethod>(loadSavedMethod);
   const [countdown, setCountdown] = useState<number | null>(null);
 
@@ -88,7 +90,8 @@ export default function PrayerPanel({ lat, lng, positionIsEstimated }: PrayerPan
     { lat: lat ?? 0, lng: lng ?? 0, method },
     {
       enabled,
-      refetchInterval: 60_000,
+      // Stop background polling once the flight has landed — no position updates needed
+      refetchInterval: isLanded ? false : 60_000,
       staleTime: 30_000,
     }
   );

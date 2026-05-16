@@ -61,12 +61,20 @@ export interface Fr24FlightSummary {
   flight_ended?: boolean;
 }
 
+export interface Fr24Quota {
+  /** Credits remaining this billing period */
+  creditsRemaining?: number;
+  /** Credits consumed in this request */
+  creditsConsumed?: number;
+}
+
 export interface Fr24CombinedData {
   live?: Fr24LivePosition;
   summary?: Fr24FlightSummary;
+  quota?: Fr24Quota;
 }
 
-async function fr24Get<T>(path: string, params: Record<string, string> = {}): Promise<T> {
+async function fr24Get<T>(path: string, params: Record<string, string> = {}): Promise<{ data: T; quota?: Fr24Quota }> {
   const url = new URL(`${FR24_BASE}${path}`);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
 
@@ -75,7 +83,19 @@ async function fr24Get<T>(path: string, params: Record<string, string> = {}): Pr
     const text = await res.text().catch(() => "");
     throw new Error(`FR24 API error ${res.status}: ${text}`);
   }
-  return res.json() as Promise<T>;
+
+  // Extract quota from response headers
+  const remaining = res.headers.get("x-fr24-credits-remaining");
+  const consumed = res.headers.get("x-fr24-credits-consumed");
+  const quota: Fr24Quota | undefined =
+    remaining != null || consumed != null
+      ? {
+          creditsRemaining: remaining != null ? parseInt(remaining, 10) : undefined,
+          creditsConsumed: consumed != null ? parseInt(consumed, 10) : undefined,
+        }
+      : undefined;
+
+  return { data: (await res.json()) as T, quota };
 }
 
 /**
@@ -86,12 +106,15 @@ export async function fetchFr24FlightData(flightIata: string): Promise<Fr24Combi
   let live: Fr24LivePosition | undefined;
   let fr24Id: string | undefined;
 
+  let fr24Quota: Fr24Quota | undefined;
+
   // Step 1: Get live position
   try {
-    const liveRes = await fr24Get<{ data: Fr24LivePosition[] }>(
+    const { data: liveRes, quota } = await fr24Get<{ data: Fr24LivePosition[] }>(
       "/live/flight-positions/full",
       { flights: flightIata }
     );
+    if (quota) fr24Quota = quota;
     if (liveRes.data && liveRes.data.length > 0) {
       live = liveRes.data[0];
       fr24Id = live.fr24_id;
@@ -104,10 +127,12 @@ export async function fetchFr24FlightData(flightIata: string): Promise<Fr24Combi
   let summary: Fr24FlightSummary | undefined;
   if (fr24Id) {
     try {
-      const summaryRes = await fr24Get<{ data: Fr24FlightSummary[] }>(
+      const { data: summaryRes, quota } = await fr24Get<{ data: Fr24FlightSummary[] }>(
         "/flight-summary/full",
         { flight_ids: fr24Id }
       );
+      // Prefer quota from summary call (more credits consumed = more accurate)
+      if (quota) fr24Quota = { ...fr24Quota, ...quota };
       if (summaryRes.data && summaryRes.data.length > 0) {
         summary = summaryRes.data[0];
       }
@@ -117,5 +142,5 @@ export async function fetchFr24FlightData(flightIata: string): Promise<Fr24Combi
   }
 
   if (!live && !summary) return null;
-  return { live, summary };
+  return { live, summary, quota: fr24Quota };
 }

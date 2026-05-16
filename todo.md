@@ -94,3 +94,14 @@
 - [x] Add "Local Time at Aircraft" card to Flight Times panel using plane's longitude to compute UTC offset
 - [x] Card ticks every second (live clock), shows timezone offset label (e.g. UTC+3)
 - [x] Handles estimated position gracefully (shows UTC offset with '· est' suffix when position is estimated)
+
+## Updates (Round 14 — Arrival Detection & API Quota)
+- [x] Detect landed/arrived status from AirLabs (status === 'landed') and FR24 (flight_ended === true)
+- [x] Stop all auto-refresh polling immediately when flight is detected as arrived
+- [x] Show prominent arrival banner: "Flight Landed" with actual arrival time and baggage belt number
+- [x] Freeze all panels in arrived state (no more refresh button activity)
+- [x] Only restart polling when a new flight number is entered and searched
+- [x] Extract AirLabs API quota fields from response body (request.key: limits_total, limits_by_month, limits_by_hour, limits_by_minute)
+- [x] Extract FR24 API quota fields from response headers (x-fr24-credits-remaining, x-fr24-credits-consumed)
+- [x] Display API quota (used / remaining calls) for AirLabs and FR24 in the UI footer
+- [x] Add vitest tests for arrival detection logic (6 new tests, 61 total passing)

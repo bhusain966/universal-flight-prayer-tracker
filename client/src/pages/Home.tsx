@@ -379,16 +379,27 @@ export default function Home() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Detect landed state from previous data so we can stop polling
+  const [isLandedLocked, setIsLandedLocked] = useState(false);
+
   const { data, isLoading, error, refetch, isFetching } =
     trpc.flight.lookup.useQuery(
       { flightIata: flightIata ?? "" },
       {
-        enabled: !!flightIata,
-        refetchInterval: REFRESH_INTERVAL_MS,
+        enabled: !!flightIata && !isLandedLocked,
+        // Stop auto-refresh once landed — no more API calls needed
+        refetchInterval: isLandedLocked ? false : REFRESH_INTERVAL_MS,
         staleTime: 14 * 60 * 1000,
         retry: 1,
       }
     );
+
+  // Lock polling as soon as we detect a landed flight
+  useEffect(() => {
+    if (data?.isLanded && !isLandedLocked) {
+      setIsLandedLocked(true);
+    }
+  }, [data?.isLanded, isLandedLocked]);
 
   useEffect(() => {
     if (data) setLastRefresh(new Date());
@@ -397,6 +408,8 @@ export default function Home() {
   const handleSearch = useCallback(() => {
     const val = inputValue.trim().toUpperCase();
     if (val.length < 2) return;
+    // Reset landed lock when a new flight is entered
+    setIsLandedLocked(false);
     setFlightIata(val);
     // Push to URL for deep linking / bookmarking
     navigate(`/track/${val}`);
@@ -412,6 +425,8 @@ export default function Home() {
   const fr24 = data?.fr24;
   const weather = data?.weather ?? null;
   const positionIsEstimated = data?.positionIsEstimated ?? false;
+  const isLanded = data?.isLanded ?? isLandedLocked;
+  const apiQuota = data?.apiQuota ?? null;
   // hasLiveTelemetry is true only when we have real ADS-B data (not estimated)
   const hasLiveTelemetry = flight?.lat != null && flight?.lng != null && !positionIsEstimated;
   const depDelay = flight?.dep_delay;
@@ -483,19 +498,28 @@ export default function Home() {
           {/* Refresh + live dot */}
           <div className="flex items-center gap-3 shrink-0 ml-auto">
             {flightIata && (
-              <RefreshCountdown
-                lastRefresh={lastRefresh}
-                intervalMs={REFRESH_INTERVAL_MS}
-                isFetching={isFetching}
-                onRefresh={() => refetch()}
-              />
+              isLanded ? (
+                // Show a static "Landed" badge instead of the refresh control
+                <div className="flex items-center gap-1.5 text-xs" style={{ color: "oklch(0.75 0.18 145)" }}>
+                  <Plane className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline font-semibold">Landed · Tracking stopped</span>
+                  <span className="sm:hidden font-semibold">Landed</span>
+                </div>
+              ) : (
+                <RefreshCountdown
+                  lastRefresh={lastRefresh}
+                  intervalMs={REFRESH_INTERVAL_MS}
+                  isFetching={isFetching}
+                  onRefresh={() => refetch()}
+                />
+              )
             )}
-            {hasLiveTelemetry ? (
+            {!isLanded && hasLiveTelemetry ? (
               <div className="flex items-center gap-1.5">
                 <div className="pulse-dot" />
                 <span className="text-xs text-muted-foreground hidden sm:inline">Live</span>
               </div>
-            ) : positionIsEstimated ? (
+            ) : !isLanded && positionIsEstimated ? (
               <div className="flex items-center gap-1.5">
                 <span className="text-xs text-amber-400/80">⚠ Est. Position</span>
               </div>
@@ -572,6 +596,94 @@ export default function Home() {
         {/* ── Flight data ── */}
         {flightIata && data && !isLoading && (
           <>
+            {/* ── ARRIVAL BANNER ── */}
+            {isLanded && (
+              <div
+                className="mx-4 mt-4 rounded-xl border overflow-hidden"
+                style={{
+                  background: "oklch(0.15 0.04 145 / 0.6)",
+                  borderColor: "oklch(0.55 0.18 145 / 0.5)",
+                }}
+              >
+                <div className="flex items-start gap-4 px-5 py-4">
+                  <div
+                    className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 mt-0.5"
+                    style={{ background: "oklch(0.55 0.18 145 / 0.2)", border: "1px solid oklch(0.55 0.18 145 / 0.4)" }}
+                  >
+                    <Plane className="w-5 h-5" style={{ color: "oklch(0.75 0.18 145)" }} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-base font-bold" style={{ color: "oklch(0.75 0.18 145)" }}>
+                        Flight Landed
+                      </span>
+                      <span
+                        className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                        style={{ background: "oklch(0.55 0.18 145 / 0.2)", color: "oklch(0.75 0.18 145)" }}
+                      >
+                        ARRIVED
+                      </span>
+                    </div>
+                    <div className="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-1.5 text-sm">
+                      <div>
+                        <span className="text-xs text-muted-foreground block">Arrived at</span>
+                        <span className="font-mono font-semibold text-foreground">
+                          {flight?.arr_actual
+                            ? formatLocalTime(flight.arr_actual).local
+                            : fr24?.datetimeLanded
+                            ? formatTime(fr24.datetimeLanded)
+                            : flight?.arr_estimated
+                            ? formatLocalTime(flight.arr_estimated).local
+                            : "—"}
+                        </span>
+                        {(flight?.arr_actual_utc || fr24?.datetimeLanded) && (
+                          <span className="text-[10px] text-muted-foreground/60 font-mono block">
+                            {formatTime(flight?.arr_actual_utc ?? fr24?.datetimeLanded)}
+                          </span>
+                        )}
+                      </div>
+                      <div>
+                        <span className="text-xs text-muted-foreground block">Destination</span>
+                        <span className="font-mono font-semibold text-foreground">
+                          {flight?.arr_iata ?? "—"}
+                          {(arrAirport?.city ?? flight?.arr_city) ? ` · ${arrAirport?.city ?? flight?.arr_city}` : ""}
+                        </span>
+                      </div>
+                      {flight?.arr_baggage && (
+                        <div>
+                          <span className="text-xs text-muted-foreground block">Baggage Belt</span>
+                          <span className="font-mono font-bold text-lg" style={{ color: "oklch(0.72 0.18 55)" }}>
+                            {flight.arr_baggage}
+                          </span>
+                        </div>
+                      )}
+                      {flight?.arr_terminal && (
+                        <div>
+                          <span className="text-xs text-muted-foreground block">Terminal</span>
+                          <span className="font-mono font-semibold text-foreground">{flight.arr_terminal}</span>
+                        </div>
+                      )}
+                      {flight?.arr_gate && (
+                        <div>
+                          <span className="text-xs text-muted-foreground block">Gate</span>
+                          <span className="font-mono font-semibold text-foreground">{flight.arr_gate}</span>
+                        </div>
+                      )}
+                      {fr24?.runwayLanded && (
+                        <div>
+                          <span className="text-xs text-muted-foreground block">Runway</span>
+                          <span className="font-mono font-semibold text-foreground">{fr24.runwayLanded}</span>
+                        </div>
+                      )}
+                    </div>
+                    <p className="mt-2 text-xs text-muted-foreground/60">
+                      Live tracking stopped · No further API calls will be made for this flight
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* ── 1. Identity bar ── */}
             <div className="avi-panel">
               <div className="px-4 py-3">
@@ -924,7 +1036,7 @@ export default function Home() {
               {/* Prayer times */}
               <div className="avi-panel">
                 <PanelHeader icon={<MoonIcon className="w-3.5 h-3.5" />} title="Prayer Times" />
-                <PrayerPanel lat={flight?.lat} lng={flight?.lng} positionIsEstimated={positionIsEstimated} />
+                <PrayerPanel lat={flight?.lat} lng={flight?.lng} positionIsEstimated={positionIsEstimated} isLanded={isLanded} />
               </div>
             </div>
 
@@ -959,12 +1071,42 @@ export default function Home() {
             <div className="flex flex-wrap items-center justify-center gap-4 py-2 text-xs text-muted-foreground/40">
               <div className="flex items-center gap-1.5">
                 <Timer className="w-3 h-3" />
-                <span>Data refreshes every 15 min · Last updated {lastRefresh?.toLocaleTimeString() ?? "—"}</span>
+                {isLanded ? (
+                  <span>Tracking stopped · Flight has landed · Last updated {lastRefresh?.toLocaleTimeString() ?? "—"}</span>
+                ) : (
+                  <span>Data refreshes every 15 min · Last updated {lastRefresh?.toLocaleTimeString() ?? "—"}</span>
+                )}
               </div>
               {flight?.utc && (
                 <div className="flex items-center gap-1.5">
                   <Clock className="w-3 h-3" />
                   <span>AirLabs UTC: <span className="font-mono">{flight.utc}</span></span>
+                </div>
+              )}
+              {/* API Quota display */}
+              {apiQuota?.airlabs && (
+                <div className="flex items-center gap-1.5">
+                  <Activity className="w-3 h-3" />
+                  <span>
+                    AirLabs: <span className="font-mono">{apiQuota.airlabs.usedTotal ?? "—"}</span>
+                    {apiQuota.airlabs.limitByMonth != null && (
+                      <> / {apiQuota.airlabs.limitByMonth} calls/mo</>
+                    )}
+                    {apiQuota.airlabs.limitByHour != null && (
+                      <> · {apiQuota.airlabs.limitByHour}/hr</>
+                    )}
+                  </span>
+                </div>
+              )}
+              {apiQuota?.fr24 && (
+                <div className="flex items-center gap-1.5">
+                  <Radio className="w-3 h-3" />
+                  <span>
+                    FR24 credits: <span className="font-mono">{apiQuota.fr24.creditsRemaining?.toLocaleString() ?? "—"}</span> remaining
+                    {apiQuota.fr24.creditsConsumed != null && (
+                      <> · {apiQuota.fr24.creditsConsumed} used this call</>
+                    )}
+                  </span>
                 </div>
               )}
             </div>

@@ -218,6 +218,88 @@ describe("flight.prayerTimes procedure", () => {
   });
 });
 
+describe("arrival detection", () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it("sets isLanded=true when AirLabs status is 'landed'", async () => {
+    mockFetchFlightData.mockResolvedValueOnce({
+      ...MOCK_FLIGHT_DATA,
+      flight: { ...MOCK_FLIGHT_DATA.flight, status: "landed" },
+    });
+    mockFetchFr24.mockResolvedValueOnce(null);
+
+    const caller = appRouter.createCaller(createPublicContext());
+    const result = await caller.flight.lookup({ flightIata: "QR726" });
+
+    expect(result.isLanded).toBe(true);
+  });
+
+  it("sets isLanded=true when FR24 flight_ended is true", async () => {
+    mockFetchFlightData.mockResolvedValueOnce(MOCK_FLIGHT_DATA); // status: 'en-route'
+    mockFetchFr24.mockResolvedValueOnce({
+      ...MOCK_FR24_DATA,
+      summary: { ...MOCK_FR24_DATA.summary, flight_ended: true, datetime_landed: "2026-05-16T14:13:00Z" },
+    });
+
+    const caller = appRouter.createCaller(createPublicContext());
+    const result = await caller.flight.lookup({ flightIata: "QR726" });
+
+    expect(result.isLanded).toBe(true);
+  });
+
+  it("sets isLanded=false when flight is en-route", async () => {
+    mockFetchFlightData.mockResolvedValueOnce(MOCK_FLIGHT_DATA); // status: 'en-route'
+    mockFetchFr24.mockResolvedValueOnce(MOCK_FR24_DATA); // flight_ended: false
+
+    const caller = appRouter.createCaller(createPublicContext());
+    const result = await caller.flight.lookup({ flightIata: "QR726" });
+
+    expect(result.isLanded).toBe(false);
+  });
+
+  it("exposes arr_baggage from AirLabs in the flight data", async () => {
+    mockFetchFlightData.mockResolvedValueOnce({
+      ...MOCK_FLIGHT_DATA,
+      flight: { ...MOCK_FLIGHT_DATA.flight, status: "landed", arr_baggage: "7" },
+    });
+    mockFetchFr24.mockResolvedValueOnce(null);
+
+    const caller = appRouter.createCaller(createPublicContext());
+    const result = await caller.flight.lookup({ flightIata: "QR726" });
+
+    expect(result.data?.flight.arr_baggage).toBe("7");
+    expect(result.isLanded).toBe(true);
+  });
+
+  it("returns apiQuota.airlabs when AirLabs quota data is present", async () => {
+    mockFetchFlightData.mockResolvedValueOnce({
+      ...MOCK_FLIGHT_DATA,
+      airlabsQuota: { usedTotal: 140, limitByMonth: 1000, limitByHour: 2500, limitByMinute: 250 },
+    });
+    mockFetchFr24.mockResolvedValueOnce(null);
+
+    const caller = appRouter.createCaller(createPublicContext());
+    const result = await caller.flight.lookup({ flightIata: "QR726" });
+
+    expect(result.apiQuota?.airlabs?.usedTotal).toBe(140);
+    expect(result.apiQuota?.airlabs?.limitByMonth).toBe(1000);
+  });
+
+  it("returns apiQuota.fr24 when FR24 quota headers are present", async () => {
+    mockFetchFlightData.mockResolvedValueOnce(MOCK_FLIGHT_DATA);
+    mockFetchFr24.mockResolvedValueOnce({
+      ...MOCK_FR24_DATA,
+      quota: { creditsRemaining: 52999, creditsConsumed: 6 },
+    });
+
+    const caller = appRouter.createCaller(createPublicContext());
+    const result = await caller.flight.lookup({ flightIata: "QR726" });
+
+    expect(result.apiQuota?.fr24?.creditsRemaining).toBe(52999);
+    expect(result.apiQuota?.fr24?.creditsConsumed).toBe(6);
+  });
+});
+
 describe("AirLabs datetime normalisation regression", () => {
   it("passes through ISO timestamps unchanged", async () => {
     // Simulate AirLabs returning already-ISO timestamps (should not break)

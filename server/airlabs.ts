@@ -35,6 +35,7 @@ export interface AirlabsFlightData {
   arr_country?: string;
   arr_terminal?: string;
   arr_gate?: string;
+  arr_baggage?: string | number;
   arr_time?: string;
   arr_time_utc?: string;
   arr_actual?: string;
@@ -90,10 +91,22 @@ export interface AirlabsAircraftData {
   flag?: string;
 }
 
+export interface AirlabsQuota {
+  /** Total API calls consumed so far (from request.key.limits_total) */
+  usedTotal?: number;
+  /** Monthly call limit */
+  limitByMonth?: number;
+  /** Hourly call limit */
+  limitByHour?: number;
+  /** Per-minute call limit */
+  limitByMinute?: number;
+}
+
 export interface FlightFullData {
   flight: AirlabsFlightData;
   depAirport?: AirlabsAirportData;
   arrAirport?: AirlabsAirportData;
+  airlabsQuota?: AirlabsQuota;
 }
 
 /**
@@ -121,19 +134,46 @@ function normaliseLocalDatetime(raw: string | null | undefined): string | undefi
   return raw;
 }
 
-async function airlabsGet<T>(endpoint: string, params: Record<string, string>): Promise<T> {
+interface AirlabsRawResponse<T> {
+  response: T;
+  error?: { message: string };
+  request?: {
+    key?: {
+      limits_total?: number;
+      limits_by_month?: number;
+      limits_by_hour?: number;
+      limits_by_minute?: number;
+    };
+  };
+}
+
+async function airlabsGetRaw<T>(
+  endpoint: string,
+  params: Record<string, string>
+): Promise<{ data: T; quota?: AirlabsQuota }> {
   const url = `${BASE_URL}/${endpoint}`;
-  const response = await axios.get<{ response: T; error?: { message: string } }>(url, {
-    params: {
-      api_key: ENV.airlabsApiKey,
-      ...params,
-    },
+  const response = await axios.get<AirlabsRawResponse<T>>(url, {
+    params: { api_key: ENV.airlabsApiKey, ...params },
     timeout: 15000,
   });
   if (response.data.error) {
     throw new Error(response.data.error.message);
   }
-  return response.data.response;
+  const key = response.data.request?.key;
+  const quota: AirlabsQuota | undefined = key
+    ? {
+        usedTotal: key.limits_total,
+        limitByMonth: key.limits_by_month,
+        limitByHour: key.limits_by_hour,
+        limitByMinute: key.limits_by_minute,
+      }
+    : undefined;
+  return { data: response.data.response, quota };
+}
+
+async function airlabsGet<T>(endpoint: string, params: Record<string, string>): Promise<T> {
+  const { data } = await airlabsGetRaw<T>(endpoint, params);
+  return data;
 }
 
 /**
@@ -161,11 +201,13 @@ export async function fetchFlightData(flightIata: string): Promise<FlightFullDat
   // Always fetch schedule/status data from /flight endpoint
   // NOTE: /flight returns a SINGLE OBJECT (not an array) unlike /flights
   let scheduleData: AirlabsFlightData | undefined;
+  let airlabsQuota: AirlabsQuota | undefined;
   try {
     // The generic helper wraps response — /flight returns a single object, not array
-    const raw = await airlabsGet<AirlabsFlightData | AirlabsFlightData[]>("flight", {
+    const { data: raw, quota } = await airlabsGetRaw<AirlabsFlightData | AirlabsFlightData[]>("flight", {
       flight_iata: normalized,
     });
+    airlabsQuota = quota;
     if (Array.isArray(raw)) {
       // Defensive: if API ever returns array, take first element
       if (raw.length > 0) scheduleData = raw[0];
@@ -208,6 +250,7 @@ export async function fetchFlightData(flightIata: string): Promise<FlightFullDat
     dep_gate: scheduleData?.dep_gate ?? liveData?.dep_gate,
     arr_terminal: scheduleData?.arr_terminal ?? liveData?.arr_terminal,
     arr_gate: scheduleData?.arr_gate ?? liveData?.arr_gate,
+    arr_baggage: scheduleData?.arr_baggage ?? liveData?.arr_baggage,
     // Live telemetry from liveData (prefer liveData, fallback to scheduleData)
     lat: liveData?.lat ?? scheduleData?.lat,
     lng: liveData?.lng ?? scheduleData?.lng,
@@ -263,5 +306,5 @@ export async function fetchFlightData(flightIata: string): Promise<FlightFullDat
     }
   } catch { /* ignore — partial data still usable */ }
 
-  return { flight: merged, depAirport, arrAirport };
+  return { flight: merged, depAirport, arrAirport, airlabsQuota };
 }

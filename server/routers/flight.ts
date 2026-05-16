@@ -158,11 +158,23 @@ export const flightRouter = router({
           f.arr_estimated = normLocal(f.arr_estimated);
         }
 
+        // Determine if flight has arrived:
+        // Primary: AirLabs status === 'landed'
+        // Secondary: FR24 flight_ended === true
+        const isLanded =
+          data?.flight?.status?.toLowerCase() === "landed" ||
+          fr24?.summary?.flight_ended === true;
+
         return {
           success: true as const,
           data,
           weather,
           positionIsEstimated,
+          isLanded,
+          apiQuota: {
+            airlabs: data?.airlabsQuota ?? null,
+            fr24: fr24?.quota ?? null,
+          },
           fr24: fr24
             ? {
                 callsign: fr24.live?.callsign,
