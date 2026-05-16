@@ -39,3 +39,9 @@
 
 ## Updates (Round 4)
 - [x] Make flight route arc clearly visible on Leaflet dark map (bright color, thick stroke, dashed completed portion vs remaining)
+
+## Updates (Round 5)
+- [x] Fix geodesic route arc — no sharp turns, correct antimeridian wrapping (longitude unwrapping, 2 new tests)
+- [x] Add elapsed flight time (time since actual departure)
+- [x] Add remaining flight time (ETA minus now)
+- [x] Add estimated arrival time (ETA) prominently in schedule panel (34 tests total, all passing)

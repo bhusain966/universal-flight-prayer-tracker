@@ -29,6 +29,28 @@ function formatTime(iso?: string | null): string {
   }
 }
 
+// Format a duration in minutes as "Xh Ym"
+function formatDuration(mins?: number | null): string {
+  if (mins == null || mins < 0) return "—";
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (h === 0) return `${m}m`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
+}
+
+// Compute elapsed minutes since an ISO departure time
+function elapsedMinutes(depIso?: string | null): number | null {
+  if (!depIso) return null;
+  try {
+    const dep = new Date(depIso).getTime();
+    const diff = Math.floor((Date.now() - dep) / 60000);
+    return diff > 0 ? diff : null;
+  } catch {
+    return null;
+  }
+}
+
 function formatDelay(mins?: number | null): string {
   if (mins == null || mins === 0) return "On time";
   if (mins > 0) return `+${mins} min`;
@@ -478,27 +500,47 @@ export default function Home() {
                   </div>
                 </div>
 
-                <div className="flex flex-col items-end gap-1">
-                  {flight?.duration && (
-                    <div className="text-right">
-                      <div className="text-xs text-muted-foreground uppercase tracking-wider">
-                        Duration
-                      </div>
-                      <div className="font-mono text-sm text-foreground">
-                        {Math.floor(flight.duration / 60)}h {flight.duration % 60}m
-                      </div>
-                    </div>
-                  )}
-                  {fr24?.actualDistance && (
-                    <div className="text-right">
-                      <div className="text-xs text-muted-foreground uppercase tracking-wider">
-                        Dist. flown
-                      </div>
-                      <div className="font-mono text-sm text-primary">
-                        {formatDistance(fr24.actualDistance)}
-                      </div>
-                    </div>
-                  )}
+                <div className="flex flex-col items-end gap-2">
+                  {(() => {
+                    const depActual = flight?.dep_actual_utc ?? flight?.dep_estimated_utc;
+                    const elapsed = elapsedMinutes(depActual);
+                    const remaining = flight?.eta ?? null;
+                    const etaIso = fr24?.etaIso ?? flight?.arr_estimated_utc ?? flight?.arr_time_utc;
+                    return (
+                      <>
+                        {elapsed != null && (
+                          <div className="text-right">
+                            <div className="text-xs text-muted-foreground uppercase tracking-wider">Elapsed</div>
+                            <div className="font-mono text-sm text-cyan-400 font-semibold">{formatDuration(elapsed)}</div>
+                          </div>
+                        )}
+                        {remaining != null && (
+                          <div className="text-right">
+                            <div className="text-xs text-muted-foreground uppercase tracking-wider">Remaining</div>
+                            <div className="font-mono text-sm text-amber-400 font-semibold">{formatDuration(remaining)}</div>
+                          </div>
+                        )}
+                        {etaIso && (
+                          <div className="text-right">
+                            <div className="text-xs text-muted-foreground uppercase tracking-wider">ETA (UTC)</div>
+                            <div className="font-mono text-sm text-primary font-bold">{formatTime(etaIso)}</div>
+                          </div>
+                        )}
+                        {flight?.duration && (
+                          <div className="text-right">
+                            <div className="text-xs text-muted-foreground uppercase tracking-wider">Total</div>
+                            <div className="font-mono text-sm text-foreground">{formatDuration(flight.duration)}</div>
+                          </div>
+                        )}
+                        {fr24?.actualDistance && (
+                          <div className="text-right">
+                            <div className="text-xs text-muted-foreground uppercase tracking-wider">Dist. flown</div>
+                            <div className="font-mono text-sm text-primary">{formatDistance(fr24.actualDistance)}</div>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
 
@@ -744,9 +786,9 @@ export default function Home() {
                         </div>
                         {flight?.eta != null && (
                           <div>
-                            <div className="avi-label mb-0.5">ETA (remaining)</div>
-                            <div className="avi-value text-sm font-semibold text-primary">
-                              {Math.floor(flight.eta / 60)}h {flight.eta % 60}m
+                            <div className="avi-label mb-0.5">Remaining</div>
+                            <div className="avi-value text-sm font-semibold text-amber-400">
+                              {formatDuration(flight.eta)}
                             </div>
                           </div>
                         )}
@@ -761,8 +803,8 @@ export default function Home() {
                         </div>
                         {fr24?.etaIso && (
                           <div>
-                            <div className="avi-label mb-0.5">FR24 ETA</div>
-                            <div className="avi-value text-sm font-mono text-primary">
+                            <div className="avi-label mb-0.5">Arrival ETA</div>
+                            <div className="avi-value text-sm font-mono text-primary font-bold">
                               {formatTime(fr24.etaIso)}
                             </div>
                           </div>

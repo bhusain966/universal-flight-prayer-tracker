@@ -14,19 +14,22 @@ interface FlightMapProps {
   arrIata?: string;
 }
 
-// Dark tile layer — CartoDB Dark Matter (no API key required)
 const DARK_TILE_URL =
   "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
 const TILE_ATTRIBUTION =
   '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
 
-// ── Geodesic interpolation ────────────────────────────────────────────────────
-// Interpolates N points along the great-circle arc between two lat/lng pairs.
-// Returns an array of [lat, lng] tuples suitable for L.polyline.
+// ── Geodesic great-circle interpolation ──────────────────────────────────────
+// Uses spherical linear interpolation (slerp) in 3-D Cartesian space, then
+// projects back to lat/lng.  After generating all points we "unwrap" the
+// longitude sequence so that consecutive points never jump more than 180°,
+// which eliminates the sharp visual turn Leaflet draws when a route crosses
+// the antimeridian (±180°).
+
 function greatCirclePoints(
   lat1: number, lng1: number,
   lat2: number, lng2: number,
-  steps = 80
+  steps = 120,
 ): L.LatLngTuple[] {
   const toRad = (d: number) => (d * Math.PI) / 180;
   const toDeg = (r: number) => (r * 180) / Math.PI;
@@ -34,16 +37,17 @@ function greatCirclePoints(
   const φ1 = toRad(lat1), λ1 = toRad(lng1);
   const φ2 = toRad(lat2), λ2 = toRad(lng2);
 
+  // Angular distance between the two points
   const d = 2 * Math.asin(
     Math.sqrt(
       Math.sin((φ2 - φ1) / 2) ** 2 +
-      Math.cos(φ1) * Math.cos(φ2) * Math.sin((λ2 - λ1) / 2) ** 2
-    )
+      Math.cos(φ1) * Math.cos(φ2) * Math.sin((λ2 - λ1) / 2) ** 2,
+    ),
   );
 
-  if (d === 0) return [[lat1, lng1]];
+  if (d < 1e-10) return [[lat1, lng1]];
 
-  const pts: L.LatLngTuple[] = [];
+  const rawPts: L.LatLngTuple[] = [];
   for (let i = 0; i <= steps; i++) {
     const f = i / steps;
     const A = Math.sin((1 - f) * d) / Math.sin(d);
@@ -53,17 +57,32 @@ function greatCirclePoints(
     const z = A * Math.sin(φ1) + B * Math.sin(φ2);
     const φ = Math.atan2(z, Math.sqrt(x * x + y * y));
     const λ = Math.atan2(y, x);
-    pts.push([toDeg(φ), toDeg(λ)]);
+    rawPts.push([toDeg(φ), toDeg(λ)]);
   }
+
+  // ── Longitude unwrapping ─────────────────────────────────────────────────
+  // Walk through the points and adjust each longitude so it stays within
+  // ±180° of the previous one.  This keeps the polyline on one side of the
+  // map and prevents Leaflet from drawing a line that "wraps" across the
+  // globe the wrong way.
+  const pts: L.LatLngTuple[] = [rawPts[0]];
+  for (let i = 1; i < rawPts.length; i++) {
+    let prevLng = pts[i - 1][1];
+    let curLng = rawPts[i][1];
+    // Bring curLng within 180° of prevLng
+    while (curLng - prevLng > 180) curLng -= 360;
+    while (prevLng - curLng > 180) curLng += 360;
+    pts.push([rawPts[i][0], curLng]);
+  }
+
   return pts;
 }
 
-// Given the full arc and the aircraft position, find the closest arc index
-// and split into completed (dep → aircraft) and remaining (aircraft → arr).
+// Split the arc at the closest point to the aircraft position
 function splitArc(
   arc: L.LatLngTuple[],
   aircraftLat: number,
-  aircraftLng: number
+  aircraftLng: number,
 ): { done: L.LatLngTuple[]; remaining: L.LatLngTuple[] } {
   let closestIdx = 0;
   let minDist = Infinity;
@@ -84,35 +103,35 @@ function splitArc(
 
 function makeAirplaneIcon(heading: number): L.DivIcon {
   const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="36" height="36"
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="38" height="38"
       style="transform:rotate(${heading}deg);transform-origin:center;
-             filter:drop-shadow(0 0 6px rgba(245,158,11,0.9)) drop-shadow(0 0 2px #000)">
+             filter:drop-shadow(0 0 6px rgba(245,158,11,0.95)) drop-shadow(0 0 2px #000)">
       <path d="M12 2L8 10H4L6 12H10L8 22H10L12 18L14 22H16L14 12H18L20 10H16L12 2Z"
-        fill="#f59e0b" stroke="#1a1a2e" stroke-width="0.8"/>
+        fill="#f59e0b" stroke="#0d1117" stroke-width="0.8"/>
     </svg>`;
   return L.divIcon({
     html: svg,
     className: "",
-    iconSize: [36, 36],
-    iconAnchor: [18, 18],
+    iconSize: [38, 38],
+    iconAnchor: [19, 19],
   });
 }
 
 function makeAirportIcon(iata: string, color: string): L.DivIcon {
   const html = `
     <div style="
-      width:32px; height:32px; border-radius:50%;
+      width:34px; height:34px; border-radius:50%;
       background:#0d1117; border:2.5px solid ${color};
       display:flex; align-items:center; justify-content:center;
       font-size:7px; font-weight:800; color:${color};
-      font-family:monospace; line-height:1;
-      box-shadow:0 0 8px ${color}55;
+      font-family:monospace; line-height:1; text-align:center;
+      box-shadow:0 0 10px ${color}66;
     ">${iata}</div>`;
   return L.divIcon({
     html,
     className: "",
-    iconSize: [32, 32],
-    iconAnchor: [16, 16],
+    iconSize: [34, 34],
+    iconAnchor: [17, 17],
   });
 }
 
@@ -146,14 +165,14 @@ export default function FlightMap({
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
-    const centerLat = lat ?? depLat ?? 25;
-    const centerLng = lng ?? depLng ?? 45;
-
     const map = L.map(containerRef.current, {
-      center: [centerLat, centerLng],
-      zoom: hasRoute ? 4 : 6,
+      center: [lat ?? depLat ?? 25, lng ?? depLng ?? 45],
+      zoom: hasRoute ? 3 : 6,
       zoomControl: true,
       attributionControl: true,
+      // Allow the map to show coordinates outside ±180° so unwrapped
+      // polylines render correctly without jumping across the antimeridian.
+      worldCopyJump: false,
     });
 
     L.tileLayer(DARK_TILE_URL, {
@@ -191,54 +210,56 @@ export default function FlightMap({
     const bounds: L.LatLngTuple[] = [];
 
     if (hasRoute) {
-      const arc = greatCirclePoints(depLat!, depLng!, arrLat!, arrLng!, 100);
+      const arc = greatCirclePoints(depLat!, depLng!, arrLat!, arrLng!, 120);
 
       if (hasPosition) {
-        // Split arc into completed (bright cyan) and remaining (dim dashed amber)
         const { done, remaining } = splitArc(arc, lat!, lng!);
 
-        // Completed portion — bright, solid, thick
+        // Completed portion — solid bright cyan
         routeDoneRef.current = L.polyline(done, {
-          color: "#22d3ee",    // cyan-400
-          weight: 3,
-          opacity: 0.95,
+          color: "#22d3ee",
+          weight: 3.5,
+          opacity: 1,
         }).addTo(map);
 
-        // Remaining portion — dimmer, dashed
+        // Remaining portion — dashed amber
         routeRemainingRef.current = L.polyline(remaining, {
-          color: "#f59e0b",   // amber-400
-          weight: 2,
-          opacity: 0.55,
-          dashArray: "8 10",
+          color: "#f59e0b",
+          weight: 2.5,
+          opacity: 0.65,
+          dashArray: "10 12",
         }).addTo(map);
       } else {
-        // No live position — draw full arc in amber dashed
+        // No live position — full arc in dashed amber
         routeRemainingRef.current = L.polyline(arc, {
           color: "#f59e0b",
           weight: 2.5,
           opacity: 0.7,
-          dashArray: "8 10",
+          dashArray: "10 12",
         }).addTo(map);
       }
 
-      // Airport markers
-      depMarkerRef.current = L.marker([depLat!, depLng!], {
+      // Airport markers — use unwrapped longitudes from the arc endpoints
+      const depPt: L.LatLngTuple = [arc[0][0], arc[0][1]];
+      const arrPt: L.LatLngTuple = [arc[arc.length - 1][0], arc[arc.length - 1][1]];
+
+      depMarkerRef.current = L.marker(depPt, {
         icon: makeAirportIcon(depIata, "#22d3ee"),
         title: depIata,
         zIndexOffset: 50,
       })
         .addTo(map)
-        .bindTooltip(`<b>${depIata}</b> Departure`, { direction: "top", className: "avi-tooltip" });
+        .bindTooltip(`<b>${depIata}</b> Departure`, { direction: "top" });
 
-      arrMarkerRef.current = L.marker([arrLat!, arrLng!], {
+      arrMarkerRef.current = L.marker(arrPt, {
         icon: makeAirportIcon(arrIata, "#f59e0b"),
         title: arrIata,
         zIndexOffset: 50,
       })
         .addTo(map)
-        .bindTooltip(`<b>${arrIata}</b> Arrival`, { direction: "top", className: "avi-tooltip" });
+        .bindTooltip(`<b>${arrIata}</b> Arrival`, { direction: "top" });
 
-      bounds.push([depLat!, depLng!], [arrLat!, arrLng!]);
+      bounds.push(depPt, arrPt);
     }
 
     // Aircraft marker
@@ -251,12 +272,16 @@ export default function FlightMap({
       bounds.push([lat!, lng!]);
     }
 
-    // Fit map to all markers
+    // Fit map to all markers with padding
     if (bounds.length > 0) {
       if (bounds.length === 1) {
         map.setView(bounds[0], 6);
       } else {
-        map.fitBounds(L.latLngBounds(bounds), { padding: [50, 50] });
+        try {
+          map.fitBounds(L.latLngBounds(bounds), { padding: [55, 55], maxZoom: 8 });
+        } catch {
+          map.setView(bounds[0], 4);
+        }
       }
     }
   }, [lat, lng, depLat, depLng, arrLat, arrLng, heading, hasPosition, hasRoute, depIata, arrIata]);
@@ -264,7 +289,7 @@ export default function FlightMap({
   return (
     <div
       ref={containerRef}
-      style={{ width: "100%", height: "100%", minHeight: 340 }}
+      style={{ width: "100%", height: "100%", minHeight: 360 }}
     />
   );
 }

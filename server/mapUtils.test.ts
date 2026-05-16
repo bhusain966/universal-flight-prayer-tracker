@@ -30,7 +30,7 @@ function greatCirclePoints(
 
   if (d === 0) return [[lat1, lng1]];
 
-  const pts: [number, number][] = [];
+  const rawPts: [number, number][] = [];
   for (let i = 0; i <= steps; i++) {
     const f = i / steps;
     const A = Math.sin((1 - f) * d) / Math.sin(d);
@@ -40,7 +40,16 @@ function greatCirclePoints(
     const z = A * Math.sin(φ1) + B * Math.sin(φ2);
     const φ = Math.atan2(z, Math.sqrt(x * x + y * y));
     const λ = Math.atan2(y, x);
-    pts.push([toDeg(φ), toDeg(λ)]);
+    rawPts.push([toDeg(φ), toDeg(λ)]);
+  }
+  // Longitude unwrapping: keep consecutive points within ±180° of each other
+  const pts: [number, number][] = [rawPts[0]];
+  for (let i = 1; i < rawPts.length; i++) {
+    let prevLng = pts[i - 1][1];
+    let curLng = rawPts[i][1];
+    while (curLng - prevLng > 180) curLng -= 360;
+    while (prevLng - curLng > 180) curLng += 360;
+    pts.push([rawPts[i][0], curLng]);
   }
   return pts;
 }
@@ -95,6 +104,25 @@ describe("greatCirclePoints", () => {
     const pts = greatCirclePoints(41.97, -87.91, 25.27, 51.61, 100);
     const maxLat = Math.max(...pts.map((p) => p[0]));
     expect(maxLat).toBeGreaterThan(50);
+  });
+
+  it("longitude unwrapping: consecutive points never jump more than 180°", () => {
+    // A long eastbound route from Los Angeles to Tokyo crosses the antimeridian.
+    // Without unwrapping, the longitude would jump from ~+170 to ~-170 (a 340° gap).
+    // With unwrapping, consecutive deltas must stay within ±180°.
+    const pts = greatCirclePoints(33.94, -118.41, 35.55, 139.78, 120);
+    for (let i = 1; i < pts.length; i++) {
+      const delta = Math.abs(pts[i][1] - pts[i - 1][1]);
+      expect(delta).toBeLessThanOrEqual(180);
+    }
+  });
+
+  it("westbound route (DOH→JFK) has no longitude jump > 180°", () => {
+    const pts = greatCirclePoints(25.27, 51.61, 40.64, -73.78, 120);
+    for (let i = 1; i < pts.length; i++) {
+      const delta = Math.abs(pts[i][1] - pts[i - 1][1]);
+      expect(delta).toBeLessThanOrEqual(180);
+    }
   });
 });
 
