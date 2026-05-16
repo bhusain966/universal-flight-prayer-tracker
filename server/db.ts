@@ -122,6 +122,18 @@ export async function saveFlightHistory(record: InsertFlightHistory): Promise<nu
   }
 }
 
+/** Patch specific fields on an existing flight history row by id. */
+export async function patchFlightHistory(id: number, patch: Partial<InsertFlightHistory>): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  try {
+    await db.update(flightHistory).set(patch).where(eq(flightHistory.id, id));
+  } catch (error) {
+    console.error("[Database] Failed to patch flight history:", error);
+    throw error;
+  }
+}
+
 /** Return the most recent N flight history records (newest first). */
 export async function getRecentFlights(limit = 10) {
   const db = await getDb();

@@ -5,7 +5,8 @@ import { fetchFlightData } from "../airlabs";
 import { fetchFr24FlightData, fetchFr24FlightByIata } from "../fr24";
 import { getPrayerTimesResult, calculatePrayerTimes } from "../prayer";
 import { fetchWeatherAtPosition } from "../weather";
-import { saveFlightHistory, getRecentFlights, getFlightHistoryByIata, getFlightHistoryPaginated, addUpcomingTrip, getUpcomingTrips, deleteUpcomingTrip } from "../db";
+import { saveFlightHistory, getRecentFlights, getFlightHistoryByIata, getFlightHistoryPaginated, addUpcomingTrip, getUpcomingTrips, deleteUpcomingTrip, patchFlightHistory } from "../db";
+import type { InsertFlightHistory } from "../../drizzle/schema"; // path from server/routers/
 import { makeRequest } from "../_core/map";
 // airport-data-js is a CommonJS module — must use default import to avoid
 // "Named export 'getAirportByIata' not found" crash in the ESM production bundle.
@@ -401,6 +402,77 @@ export const flightRouter = router({
         input.order,
       );
       return { rows, total, page: input.page, pageSize: input.pageSize };
+    }),
+
+  /**
+   * Backfill missing local-time and delay fields on existing history rows.
+   * For each row that has actualDepUtc/actualArrUtc but no actualDepLocal,
+   * derive the local-display string from the UTC value and compute delay.
+   * Also fetches FR24 data for rows that have no UTC times at all.
+   */
+  backfillHistory: publicProcedure
+    .mutation(async () => {
+      const { rows } = await getFlightHistoryPaginated(1, 200, 'trackedAt', 'desc');
+      let patched = 0;
+      for (const row of rows) {
+        // Skip rows that already have local times populated
+        if (row.actualDepLocal && row.actualArrLocal) continue;
+
+        const patch: Partial<InsertFlightHistory> = {};
+
+        // Derive local display strings from UTC fields (UTC time is shown, clearly labelled)
+        if (!row.actualDepLocal && row.actualDepUtc) {
+          patch.actualDepLocal = row.actualDepUtc;
+        } else if (!row.scheduledDepLocal && row.scheduledDepUtc) {
+          patch.scheduledDepLocal = row.scheduledDepUtc;
+        }
+        if (!row.actualArrLocal && row.actualArrUtc) {
+          patch.actualArrLocal = row.actualArrUtc;
+        } else if (!row.scheduledArrLocal && row.scheduledArrUtc) {
+          patch.scheduledArrLocal = row.scheduledArrUtc;
+        }
+
+        // Compute delay if missing
+        if (row.depDelayMin == null && row.actualDepUtc && row.scheduledDepUtc) {
+          const a = new Date(row.actualDepUtc).getTime();
+          const s = new Date(row.scheduledDepUtc).getTime();
+          if (!isNaN(a) && !isNaN(s)) patch.depDelayMin = Math.round((a - s) / 60000);
+        }
+        if (row.arrDelayMin == null && row.actualArrUtc && row.scheduledArrUtc) {
+          const a = new Date(row.actualArrUtc).getTime();
+          const s = new Date(row.scheduledArrUtc).getTime();
+          if (!isNaN(a) && !isNaN(s)) patch.arrDelayMin = Math.round((a - s) / 60000);
+        }
+
+        // Try FR24 to enrich rows that are missing local-time fields or have no UTC times at all.
+        // This covers: (a) rows with only UTC fields, (b) rows with no times at all.
+        const missingLocalTimes = !row.actualDepLocal && !row.scheduledDepLocal;
+        const missingUtcTimes = !row.actualDepUtc && !row.scheduledDepUtc;
+        if ((missingLocalTimes || missingUtcTimes) && row.flightIata) {
+          try {
+            const fr24 = await fetchFr24FlightByIata(row.flightIata, 72);
+            if (fr24?.summary) {
+              const s = fr24.summary;
+              if (s.datetime_takeoff) {
+                patch.actualDepUtc = s.datetime_takeoff;
+                patch.actualDepLocal = s.datetime_takeoff;
+              }
+              if (s.datetime_landed) {
+                patch.actualArrUtc = s.datetime_landed;
+                patch.actualArrLocal = s.datetime_landed;
+              }
+              if (s.flight_time) patch.durationMin = s.flight_time;
+              if (s.actual_distance) patch.distanceKm = Math.round(s.actual_distance);
+            }
+          } catch { /* best-effort */ }
+        }
+
+        if (Object.keys(patch).length > 0) {
+          await patchFlightHistory(row.id, patch);
+          patched++;
+        }
+      }
+      return { patched, total: rows.length };
     }),
 
   /**

@@ -497,6 +497,26 @@ export default function Home() {
   // Recent flights query — always loaded for chips
   const { data: recentFlights } = trpc.flight.recentFlights.useQuery({ limit: 10 });
 
+  // Backfill mutation — patches existing history rows that have missing local-time / delay fields
+  const backfillHistory = trpc.flight.backfillHistory.useMutation({
+    onSuccess: (res) => {
+      if (res.patched > 0) {
+        utils.flight.recentFlights.invalidate();
+        utils.flight.historyList.invalidate();
+      }
+    },
+  });
+
+  // Run backfill once per session when the history panel is visible and has rows with missing data
+  const backfillRanRef = useRef(false);
+  useEffect(() => {
+    if (backfillRanRef.current || !recentFlights || recentFlights.length === 0) return;
+    const needsBackfill = recentFlights.some(r => !r.actualDepLocal && !r.scheduledDepLocal);
+    if (!needsBackfill) return;
+    backfillRanRef.current = true;
+    backfillHistory.mutate();
+  }, [recentFlights]);
+
   // Auto-save flight history when landing is detected
   useEffect(() => {
     if (!data?.isLanded || historySaved || !data?.data?.flight) return;
@@ -540,10 +560,11 @@ export default function Home() {
       actualDepUtc: f.dep_actual_utc ?? undefined,
       scheduledArrUtc: f.arr_time_utc ?? undefined,
       actualArrUtc: f.arr_actual_utc ?? fr24Data?.datetimeLanded ?? undefined,
-      scheduledDepLocal: f.dep_time ?? undefined,
-      actualDepLocal: f.dep_actual ?? undefined,
-      scheduledArrLocal: f.arr_time ?? undefined,
-      actualArrLocal: f.arr_actual ?? undefined,
+      // AirLabs local fields are preferred; fall back to extracting HH:MM from UTC strings
+      scheduledDepLocal: f.dep_time ?? (f.dep_time_utc ? f.dep_time_utc.replace(' ', 'T') : undefined),
+      actualDepLocal: f.dep_actual ?? (f.dep_actual_utc ? f.dep_actual_utc.replace(' ', 'T') : undefined),
+      scheduledArrLocal: f.arr_time ?? (f.arr_time_utc ? f.arr_time_utc.replace(' ', 'T') : undefined),
+      actualArrLocal: f.arr_actual ?? (f.arr_actual_utc ? f.arr_actual_utc.replace(' ', 'T') : undefined),
       depDelayMin: f.dep_delay ?? diffMin(f.dep_actual_utc, f.dep_time_utc),
       arrDelayMin: f.arr_delay ?? diffMin(f.arr_actual_utc ?? fr24Data?.datetimeLanded, f.arr_time_utc),
       durationMin: f.duration ?? undefined,
@@ -617,10 +638,12 @@ export default function Home() {
       actualDepUtc: depUtc,
       scheduledArrUtc: undefined,
       actualArrUtc: arrUtc,
+      // Derive local display strings from FR24 ISO timestamps (UTC-based)
+      // The history table shows these as HH:MM so UTC time is acceptable here
       scheduledDepLocal: undefined,
-      actualDepLocal: undefined,
+      actualDepLocal: depUtc ?? undefined,
       scheduledArrLocal: undefined,
-      actualArrLocal: undefined,
+      actualArrLocal: arrUtc ?? undefined,
       depDelayMin: undefined,
       arrDelayMin: undefined,
       durationMin: f.flightTimeMinutes ?? undefined,
@@ -958,7 +981,7 @@ export default function Home() {
                           <span className="text-xs text-muted-foreground">
                             {trip.scheduledDepLocal
                               ? trip.scheduledDepLocal.replace('T', ' ').slice(0, 16)
-                              : dep.toISOString().replace('T', ' ').slice(0, 16) + ' UTC'}
+                              : dep.toLocaleString(undefined, { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })}
                           </span>
                           <span className={`text-xs font-semibold ${isPast ? 'text-muted-foreground' : isImminent ? 'text-green-400' : 'text-primary'}`}>
                             {countdownLabel}
@@ -1016,14 +1039,14 @@ export default function Home() {
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-muted-foreground uppercase tracking-wider mb-1.5 block">Scheduled Departure (UTC) *</label>
+                  <label className="text-xs text-muted-foreground uppercase tracking-wider mb-1.5 block">Scheduled Departure (local time) *</label>
                   <input
                     type="datetime-local"
                     value={tripForm.scheduledDepUtc}
                     onChange={e => setTripForm(f => ({ ...f, scheduledDepUtc: e.target.value }))}
                     className="w-full px-3 py-2 rounded-md bg-card border border-border text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                   />
-                  <p className="text-[10px] text-muted-foreground/60 mt-1">Enter the departure time in UTC. Tracking activates 5 min before departure.</p>
+                  <p className="text-[10px] text-muted-foreground/60 mt-1">Enter in your device's local time. Tracking activates 5 min before departure.</p>
                 </div>
                 <div>
                   <label className="text-xs text-muted-foreground uppercase tracking-wider mb-1.5 block">Notes (optional)</label>
@@ -1042,7 +1065,8 @@ export default function Home() {
                       if (!tripForm.flightIata.trim() || !tripForm.scheduledDepUtc) return;
                       addTripMutation.mutate({
                         flightIata: tripForm.flightIata.trim(),
-                        scheduledDepUtc: new Date(tripForm.scheduledDepUtc + ':00Z').toISOString(),
+                        // datetime-local returns local time — new Date() converts it to UTC correctly
+                        scheduledDepUtc: new Date(tripForm.scheduledDepUtc).toISOString(),
                         notes: tripForm.notes || undefined,
                       });
                     }}

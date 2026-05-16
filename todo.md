@@ -167,3 +167,9 @@
 - [x] Wire FR24 fallback to call flightPrayerSummary and then saveHistory when fr24FallbackData shows landed
 - [x] Invalidate recentFlights and historyList after FR24-sourced save
 - [x] Add regression test for FR24-only quota-exhausted arrival save (9 new tests, 70 total passing)
+
+## Bug Fixes (Round 20)
+- [x] Fix Upcoming Trips countdown: datetime-local input was appending :00Z treating local time as UTC; fixed to use new Date(value).toISOString() which correctly converts local→UTC
+- [x] Fix Flight History table: fall back to UTC fields when AirLabs local fields are null; FR24 path now populates actualDepLocal/actualArrLocal from datetimeTakeoff/datetimeLanded
+- [x] Add backfill tRPC procedure: for each history row missing local times, fetch from FR24 and update the record
+- [x] Populate depDelayMin/arrDelayMin in FR24 save path using datetimeTakeoff vs scheduled time
